@@ -15,6 +15,7 @@ import io
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from zoneinfo import ZoneInfo
@@ -55,11 +56,38 @@ def get(url: str, timeout: int = 30) -> bytes:
     return urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout).read()
 
 
+def get_retry(url: str, attempts: int = 4) -> bytes:
+    """429/5xx 는 러너 IP 공유 때문에 흔하다. 지수 백오프로 재시도."""
+    delay, last = 3, None
+    for i in range(attempts):
+        try:
+            return get(url)
+        except urllib.error.HTTPError as exc:
+            last = exc
+            if exc.code not in (429, 500, 502, 503, 504):
+                raise
+        except Exception as exc:                                  # noqa: BLE001
+            last = exc
+        if i < attempts - 1:
+            time.sleep(delay)
+            delay *= 2
+    raise last            # type: ignore[misc]
+
+
 def from_yahoo(symbol: str) -> dict:
     """{date(ISO): close} — 실제 거래 종가(수정주가 아님)."""
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-           f"?interval=1d&range=3mo")
-    payload = json.loads(get(url))
+    errors = []
+    payload = None
+    for host in ("query1", "query2"):
+        url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/{symbol}"
+               f"?interval=1d&range=3mo")
+        try:
+            payload = json.loads(get_retry(url))
+            break
+        except Exception as exc:                                  # noqa: BLE001
+            errors.append(f"{host}: {type(exc).__name__} {exc}")
+    if payload is None:
+        raise RuntimeError(" / ".join(errors))
     res = payload["chart"]["result"][0]
     stamps = res["timestamp"]
     closes = res["indicators"]["quote"][0]["close"]
@@ -77,7 +105,7 @@ def from_stooq(symbol: str) -> dict:
     start = today - dt.timedelta(days=120)
     url = (f"https://stooq.com/q/d/l/?s={symbol.lower()}.us&i=d"
            f"&d1={start:%Y%m%d}&d2={today:%Y%m%d}")
-    text = get(url).decode("utf-8", "replace")
+    text = get_retry(url, attempts=2).decode("utf-8", "replace")
     if not text.lstrip().lower().startswith("date"):
         raise ValueError("stooq returned a non-CSV body")
     out = {}
