@@ -1,0 +1,17 @@
+{
+  "updated": "2026-09-20T23:15:57+00:00",
+  "source": {
+    "tqqq": "yahoo",
+    "qqq": "yahoo"
+  },
+  "tqqq": {
+    "date": "2026-09-18",
+    "close": 72.64
+  },
+  "qqq_week": {
+    "date": "2026-09-18",
+    "close": 721.45
+  },
+  "order_date": "2026-09-21",
+  "partial": false
+}
