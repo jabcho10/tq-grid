@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="TQQQ·QQQ 중심주가 동적 그리드 전략의 백테스트. 파라미터를 바꾸면 자산곡선과 성과가 즉시 다시 계산됩니다.">
+<meta name="color-scheme" content="light">
+<title>TQQQ 그리드 백테스트</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Noto+Sans+KR:wght@300;400;600;700&display=swap">
+<style>
+:root{color-scheme:light;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<link rel="stylesheet" href="assets/site.css">
+<style>
+/* ── 백테스트 전용 ─────────────────────────────────────────
+   차트는 단일 액센트(Action Blue) + 중립 회색만 쓴다.
+   두 계열은 "하나를 강조하고 나머지는 회색"이라 카테고리 팔레트가 아니며,
+   범례와 직접 라벨로 색 외의 식별 수단을 함께 둔다. */
+.statrow{display:grid;gap:var(--s-lg);
+  grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin-bottom:var(--s-xl)}
+.stat{display:flex;flex-direction:column;gap:var(--s-xxs)}
+.stat dt{font-size:14px;font-weight:400;letter-spacing:-.224px;color:var(--ink-muted-80)}
+.stat dd{margin:0;font-family:var(--display);font-size:40px;font-weight:600;
+  line-height:1.1;letter-spacing:0}
+.stat .sub{font-size:12px;letter-spacing:-.12px;color:var(--ink-muted-48)}
+@media (max-width:640px){ .stat dd{font-size:34px} }
+
+.figure{margin:0}
+.figcap{display:flex;align-items:baseline;gap:var(--s-md);flex-wrap:wrap;
+  margin-bottom:var(--s-sm)}
+.figcap h3{margin:0;font-size:17px;font-weight:600;letter-spacing:-.374px}
+.figcap .note{font-size:12px;letter-spacing:-.12px;color:var(--ink-muted-48)}
+.legend{display:flex;gap:var(--s-md);flex-wrap:wrap;margin-left:auto}
+.legend span{display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;letter-spacing:-.12px;color:var(--ink-muted-80)}
+.legend i{width:14px;height:2px;border-radius:1px;display:inline-block}
+.chart{width:100%;display:block;touch-action:pan-y}
+.chart text{font-family:var(--text);font-variant-numeric:tabular-nums}
+.gridline{stroke:var(--hairline);stroke-width:1;shape-rendering:crispEdges}
+.axis-l{fill:var(--ink-muted-48);font-size:11px}
+.serie-a{stroke:var(--primary);stroke-width:2;fill:none;
+  stroke-linejoin:round;stroke-linecap:round}
+.serie-b{stroke:var(--ink-muted-48);stroke-width:2;fill:none;
+  stroke-linejoin:round;stroke-linecap:round}
+.area-a{fill:var(--primary);fill-opacity:.12}
+.bar-a{fill:var(--primary)}
+.zero{stroke:var(--ink);stroke-width:1;shape-rendering:crispEdges}
+.cross{stroke:var(--ink-muted-48);stroke-width:1;shape-rendering:crispEdges}
+.dot-a{fill:var(--primary);stroke:var(--canvas);stroke-width:2}
+.dot-b{fill:var(--ink-muted-48);stroke:var(--canvas);stroke-width:2}
+.tile-parchment .dot-a,.tile-parchment .dot-b{stroke:var(--canvas-parchment)}
+.endlab{font-size:11px;font-weight:600}
+.endlab-a{fill:var(--primary)}
+.endlab-b{fill:var(--ink-muted-48)}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--on-dark);
+  border-radius:var(--r-sm);padding:8px 11px;font-size:12px;line-height:1.45;
+  letter-spacing:-.12px;white-space:nowrap;opacity:0;transition:opacity .1s;z-index:20;
+  font-variant-numeric:tabular-nums}
+.tip.on{opacity:1}
+.tip b{font-weight:600}
+.plotwrap{position:relative}
+
+.ctl{display:grid;gap:var(--s-md) var(--s-lg);
+  grid-template-columns:repeat(auto-fit,minmax(132px,1fr))}
+.ctl .field label{font-size:12px;letter-spacing:-.12px}
+.ctl .field input,.ctl .field select{height:40px;padding:8px 16px;font-size:15px}
+.ctlgroup{margin-top:var(--s-lg)}
+.ctlgroup > h3{font-size:14px;font-weight:600;letter-spacing:-.224px;
+  margin:0 0 var(--s-sm);color:var(--ink-muted-80)}
+.dirty{font-size:12px;letter-spacing:-.12px;color:var(--primary)}
+
+.tblnote{margin-top:var(--s-sm);font-size:12px;letter-spacing:-.12px;color:var(--ink-muted-48)}
+details.tableview{margin-top:var(--s-lg)}
+details.tableview > summary{cursor:pointer;font-size:14px;letter-spacing:-.224px;
+  color:var(--primary);list-style:none}
+details.tableview > summary::-webkit-details-marker{display:none}
+details.tableview > summary:focus-visible{outline:2px solid var(--primary-focus);
+  outline-offset:2px;border-radius:var(--r-xs)}
+details.tableview[open] > summary{margin-bottom:var(--s-md)}
+.loading{padding-block:var(--s-xxl);text-align:center;color:var(--ink-muted-48);
+  font-size:17px;letter-spacing:-.374px}
+</style>
+</head>
+<body>
+
+<div class="navstack">
+  <nav class="global-nav">
+    <span class="mark">TQQQ 그리드</span>
+    <span class="spacer"></span>
+    <span class="navdate" id="nav-range"></span>
+  </nav>
+  <div class="sub-nav">
+    <span class="cat">백테스트</span>
+    <span class="links">
+      <a href="index.html">주문서</a>
+      <a href="#summary">성과</a>
+      <a href="#curve">자산곡선</a>
+      <a href="#annual">연도별</a>
+      <a href="#rolling">롤링 검증</a>
+    </span>
+    <button class="btn-primary" id="btn-reset" type="button">기본값</button>
+  </div>
+</div>
+
+<!-- 조건: 아래 모든 결과를 함께 지배하는 단일 필터 영역 -->
+<section class="tile tile-compact tile-parchment" id="controls">
+  <div class="inner">
+    <div class="sec-head">
+      <h2 class="sub">백테스트 조건</h2>
+      <span class="meta" id="ctl-state">방법론 v1.2 확정 파라미터</span>
+    </div>
+    <div class="ctl">
+      <div class="field"><label for="c-start">시작 연도</label>
+        <input type="number" id="c-start" min="2011" max="2026" step="1"></div>
+      <div class="field"><label for="c-end">종료 연도</label>
+        <input type="number" id="c-end" min="2011" max="2026" step="1"></div>
+      <div class="field"><label for="c-seed">시드 ($)</label>
+        <input type="number" id="c-seed" min="1000" step="1000"></div>
+    </div>
+    <div class="ctlgroup">
+      <h3>바닥 모드</h3>
+      <div class="ctl">
+        <div class="field"><label for="b-buy">매수 (%)</label>
+          <input type="number" id="b-buy" step="0.1"></div>
+        <div class="field"><label for="b-tp">익절 (%)</label>
+          <input type="number" id="b-tp" step="0.25"></div>
+        <div class="field"><label for="b-moc">MOC (거래일)</label>
+          <input type="number" id="b-moc" min="1" max="120" step="1"></div>
+      </div>
+    </div>
+    <div class="ctlgroup">
+      <h3>중간 모드</h3>
+      <div class="ctl">
+        <div class="field"><label for="m-buy">매수 (%)</label>
+          <input type="number" id="m-buy" step="0.1"></div>
+        <div class="field"><label for="m-tp">익절 (%)</label>
+          <input type="number" id="m-tp" step="0.25"></div>
+        <div class="field"><label for="m-moc">MOC (거래일)</label>
+          <input type="number" id="m-moc" min="1" max="120" step="1"></div>
+      </div>
+    </div>
+    <div class="ctlgroup">
+      <h3>천장 모드 <span class="dirty" style="font-weight:400">1티어는 별도 파라미터</span></h3>
+      <div class="ctl">
+        <div class="field"><label for="t-buy1">1티어 매수 (%)</label>
+          <input type="number" id="t-buy1" step="0.05"></div>
+        <div class="field"><label for="t-tp1">1티어 익절 (%)</label>
+          <input type="number" id="t-tp1" step="0.1"></div>
+        <div class="field"><label for="t-buy">2–7티어 매수 (%)</label>
+          <input type="number" id="t-buy" step="0.1"></div>
+        <div class="field"><label for="t-tp">2–7티어 익절 (%)</label>
+          <input type="number" id="t-tp" step="0.25"></div>
+        <div class="field"><label for="t-moc">MOC (거래일)</label>
+          <input type="number" id="t-moc" min="1" max="120" step="1"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 성과 요약 + 자산곡선 -->
+<section class="tile tile-light" id="summary">
+  <div class="inner">
+    <div class="sec-head">
+      <h2>성과</h2>
+      <span class="meta" id="sum-meta"></span>
+    </div>
+    <p class="loading" id="loading">가격 데이터를 불러오는 중입니다…</p>
+    <dl class="statrow" id="stats" hidden></dl>
+
+    <div id="curve" class="figure" hidden>
+      <div class="figcap">
+        <h3>자산곡선</h3>
+        <span class="note">로그 눈금</span>
+        <span class="legend">
+          <span><i style="background:#0066cc"></i>그리드 전략</span>
+          <span><i style="background:#7a7a7a"></i>TQQQ 보유</span>
+        </span>
+      </div>
+      <div class="plotwrap">
+        <svg class="chart" id="svg-eq" viewBox="0 0 900 320" preserveAspectRatio="none"
+             role="img" aria-label="전략과 TQQQ 단순보유의 자산곡선 비교"></svg>
+        <div class="tip" id="tip-eq"></div>
+      </div>
+
+      <div class="figcap" style="margin-top:var(--s-lg)">
+        <h3>고점 대비 낙폭</h3>
+        <span class="note">전략 기준</span>
+      </div>
+      <div class="plotwrap">
+        <svg class="chart" id="svg-dd" viewBox="0 0 900 150" preserveAspectRatio="none"
+             role="img" aria-label="전략의 고점 대비 낙폭"></svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 연도별 -->
+<section class="tile tile-parchment" id="annual">
+  <div class="inner">
+    <div class="sec-head">
+      <h2>연도별 수익률</h2>
+      <span class="meta">0% 기준선 아래가 손실 연도입니다</span>
+    </div>
+    <div class="plotwrap">
+      <svg class="chart" id="svg-yr" viewBox="0 0 900 260" preserveAspectRatio="none"
+           role="img" aria-label="연도별 수익률 막대그래프"></svg>
+      <div class="tip" id="tip-yr"></div>
+    </div>
+    <details class="tableview">
+      <summary>표로 보기</summary>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>연도</th><th>수익률</th><th>연중 MDD</th><th>연말 자산</th></tr></thead>
+          <tbody id="yr-body"></tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- 롤링 -->
+<section class="tile tile-light" id="rolling">
+  <div class="inner">
+    <div class="sec-head">
+      <h2>롤링 검증</h2>
+      <span class="meta">시작 연도를 1년씩 옮겨가며 재계산합니다</span>
+    </div>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>구간</th><th>표본</th><th>최악 CAGR</th><th>중앙 CAGR</th>
+          <th>평균 CAGR</th><th>최고 CAGR</th><th>최악 MDD</th></tr></thead>
+        <tbody id="roll-body"></tbody>
+      </table>
+    </div>
+    <p class="tblnote">특정 짧은 구간이 전체 성과를 만들었는지 보는 지표입니다. 최악 CAGR이 크게 무너지면 성과가 한 시기에 몰려 있다는 뜻입니다.</p>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="inner">
+    <p class="legal">
+      TQQQ는 액면분할 조정 시계열을 씁니다. 종가 체결 가정, 매수·매도 각 0.07% 수수료와 SEC fee를 반영했으며
+      세금·환전비용·슬리피지는 반영하지 않았습니다. 장중 가격경로를 종가만으로 재현할 수 없으므로 실제 LOC·MOC
+      체결과는 차이가 납니다. 파라미터 탐색에 쓰인 구간이 포함된 인샘플 성과는 미래 수익을 의미하지 않습니다.
+    </p>
+  </div>
+</footer>
+
+<script src="assets/backtest.js"></script>
+<script>
+(function(){
+'use strict';
+var B = window.GridBacktest, hist = null, cfgModes = null;
+var $ = function(id){ return document.getElementById(id); };
+
+var DEF = {
+  start: 2011, end: 2025, seed: 10000,
+  b_buy: 5.0,  b_tp: 11.0,  b_moc: 50,
+  m_buy: 1.5,  m_tp: 1.25,  m_moc: 50,
+  t_buy1: -1.65, t_tp1: 0.8, t_buy: 2.0, t_tp: 2.75, t_moc: 7
+};
+var IDS = ['c-start','c-end','c-seed','b-buy','b-tp','b-moc',
+           'm-buy','m-tp','m-moc','t-buy1','t-tp1','t-buy','t-tp','t-moc'];
+var KEY = { 'c-start':'start','c-end':'end','c-seed':'seed',
+  'b-buy':'b_buy','b-tp':'b_tp','b-moc':'b_moc','m-buy':'m_buy','m-tp':'m_tp','m-moc':'m_moc',
+  't-buy1':'t_buy1','t-tp1':'t_tp1','t-buy':'t_buy','t-tp':'t_tp','t-moc':'t_moc' };
+
+function readForm(){
+  var v = {};
+  IDS.forEach(function(id){
+    var raw = $(id).value, n = parseFloat(raw);
+    v[KEY[id]] = (raw === '' || isNaN(n)) ? DEF[KEY[id]] : n;
+  });
+  return v;
+}
+function writeForm(v){ IDS.forEach(function(id){ $(id).value = v[KEY[id]]; }); }
+function isDefault(v){
+  return IDS.every(function(id){ var k = KEY[id]; return Math.abs(v[k] - DEF[k]) < 1e-12; });
+}
+function toParams(v){
+  var w = B.DEFAULT_PARAMS;
+  return {
+    bottom:{ buy:v.b_buy/100, tp:v.b_tp/100, moc:Math.round(v.b_moc), w:w.bottom.w },
+    middle:{ buy:v.m_buy/100, tp:v.m_tp/100, moc:Math.round(v.m_moc), w:w.middle.w },
+    top:{ buy:v.t_buy/100, tp:v.t_tp/100, moc:Math.round(v.t_moc), w:w.top.w,
+          buy1:v.t_buy1/100, tp1:v.t_tp1/100 }
+  };
+}
+
+/* ── 포맷 ────────────────────────────────────────────────── */
+function pc(x,d){ d=(d==null?2:d); return (x>=0?'+':'−')+Math.abs(x*100).toFixed(d)+'%'; }
+function pcRaw(x,d){ d=(d==null?2:d); return (x*100).toFixed(d)+'%'; }
+function money(x){
+  if (x >= 1e6) return '$'+(x/1e6).toFixed(2)+'M';
+  if (x >= 1e3) return '$'+Math.round(x).toLocaleString('en-US');
+  return '$'+x.toFixed(0);
+}
+function moneyFull(x){ return '$'+Math.round(x).toLocaleString('en-US'); }
+function esc(s){ return String(s).replace(/[&<>"]/g,function(c){
+  return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+
+/* ── SVG 헬퍼 ────────────────────────────────────────────── */
+var NS='http://www.w3.org/2000/svg';
+function el(tag,attrs,text){
+  var n=document.createElementNS(NS,tag);
+  for(var k in attrs) if(attrs[k]!=null) n.setAttribute(k,attrs[k]);
+  if(text!=null) n.textContent=text;
+  return n;
+}
+function clear(svg){ while(svg.firstChild) svg.removeChild(svg.firstChild); }
+function niceLogTicks(lo,hi){
+  var out=[], e=Math.floor(Math.log10(lo));
+  for(; Math.pow(10,e)<=hi*10; e++){
+    [1,2,5].forEach(function(m){
+      var v=m*Math.pow(10,e);
+      if(v>=lo&&v<=hi) out.push(v);
+    });
+  }
+  if(out.length>7){ out=out.filter(function(v){
+    var m=v/Math.pow(10,Math.floor(Math.log10(v)));
+    return Math.abs(m-1)<1e-9 || Math.abs(m-5)<1e-9; }); }
+  if(out.length>7){ out=out.filter(function(v){
+    var m=v/Math.pow(10,Math.floor(Math.log10(v)));
+    return Math.abs(m-1)<1e-9; }); }
+  return out;
+}
+
+/* ── 자산곡선 + 낙폭 ─────────────────────────────────────── */
+var W=900, PADL=64, PADR=64, PADT=14;
+var state = null;
+
+function drawCurve(r, m, bh){
+  var svg=$('svg-eq'), H=320, PADB=26, h=H-PADT-PADB;
+  clear(svg);
+  var n=r.dates.length, i;
+  var lo=Infinity, hi=-Infinity;
+  for(i=0;i<n;i++){
+    if(r.equity[i]<lo) lo=r.equity[i]; if(r.equity[i]>hi) hi=r.equity[i];
+    if(bh[i]<lo) lo=bh[i]; if(bh[i]>hi) hi=bh[i];
+  }
+  lo=Math.max(lo,1);
+  var L=Math.log10(lo), Hh=Math.log10(hi), span=(Hh-L)||1;
+  var X=function(i){ return PADL+(W-PADL-PADR)*(n<2?0:i/(n-1)); };
+  var Y=function(v){ return PADT+h-(Math.log10(Math.max(v,1))-L)/span*h; };
+
+  niceLogTicks(lo,hi).forEach(function(v){
+    var y=Y(v);
+    svg.appendChild(el('line',{x1:PADL,x2:W-PADR,y1:y,y2:y,'class':'gridline'}));
+    svg.appendChild(el('text',{x:PADL-8,y:y+3,'class':'axis-l','text-anchor':'end'},money(v)));
+  });
+  // 연도 눈금
+  var seenY={}, ticks=[];
+  for(i=0;i<n;i++){ var y4=r.dates[i].slice(0,4); if(!seenY[y4]){ seenY[y4]=1; ticks.push([i,y4]); } }
+  var stepY=Math.ceil(ticks.length/8);
+  ticks.forEach(function(t,k){
+    if(k%stepY) return;
+    svg.appendChild(el('text',{x:X(t[0]),y:H-8,'class':'axis-l','text-anchor':'middle'},t[1]));
+  });
+
+  function path(arr){
+    var d='', step=Math.max(1,Math.floor(n/1400));
+    for(i=0;i<n;i+=step) d+=(i?'L':'M')+X(i).toFixed(1)+' '+Y(arr[i]).toFixed(1);
+    if((n-1)%step) d+='L'+X(n-1).toFixed(1)+' '+Y(arr[n-1]).toFixed(1);
+    return d;
+  }
+  svg.appendChild(el('path',{d:path(bh),'class':'serie-b'}));
+  svg.appendChild(el('path',{d:path(r.equity),'class':'serie-a'}));
+
+  // 끝점 직접 라벨
+  var ya=Y(r.equity[n-1]), yb=Y(bh[n-1]);
+  if(Math.abs(ya-yb)<11) yb = ya<yb ? ya+11 : ya-11;
+  svg.appendChild(el('text',{x:W-PADR+6,y:ya+3,'class':'endlab endlab-a'},money(r.equity[n-1])));
+  svg.appendChild(el('text',{x:W-PADR+6,y:yb+3,'class':'endlab endlab-b'},money(bh[n-1])));
+
+  // 낙폭
+  var sd=$('svg-dd'), H2=150, PADB2=26, h2=H2-PADT-PADB2;
+  clear(sd);
+  var worst=m.mdd||-0.01;
+  var Y2=function(v){ return PADT+(v/worst)*h2; };
+  [0,worst/2,worst].forEach(function(v){
+    var y=Y2(v);
+    sd.appendChild(el('line',{x1:PADL,x2:W-PADR,y1:y,y2:y,'class':v===0?'zero':'gridline'}));
+    sd.appendChild(el('text',{x:PADL-8,y:y+3,'class':'axis-l','text-anchor':'end'},(v*100).toFixed(0)+'%'));
+  });
+  var dd=m.dd, dstep=Math.max(1,Math.floor(n/1400)), da='M'+X(0)+' '+Y2(0);
+  for(i=0;i<n;i+=dstep) da+='L'+X(i).toFixed(1)+' '+Y2(dd[i]).toFixed(1);
+  da+='L'+X(n-1).toFixed(1)+' '+Y2(dd[n-1]).toFixed(1);
+  sd.appendChild(el('path',{d:da+'L'+X(n-1)+' '+Y2(0)+'Z','class':'area-a'}));
+  sd.appendChild(el('path',{d:da,'class':'serie-a'}));
+  ticks.forEach(function(t,k){
+    if(k%stepY) return;
+    sd.appendChild(el('text',{x:X(t[0]),y:H2-8,'class':'axis-l','text-anchor':'middle'},t[1]));
+  });
+
+  state = { r:r, m:m, bh:bh, n:n, X:X, Y:Y, Y2:Y2, H:H, H2:H2, PADB:PADB };
+}
+
+/* 크로스헤어 — 자산곡선과 낙폭을 함께 움직인다 */
+function hookCrosshair(){
+  var eq=$('svg-eq'), dd=$('svg-dd'), tip=$('tip-eq');
+  var layer=null, layer2=null;
+  function idxFrom(ev, svg){
+    var box=svg.getBoundingClientRect();
+    var cx=(ev.touches?ev.touches[0].clientX:ev.clientX)-box.left;
+    var vx=cx/box.width*W;
+    var s=state, frac=(vx-PADL)/(W-PADL-PADR);
+    return Math.max(0,Math.min(s.n-1,Math.round(frac*(s.n-1))));
+  }
+  function show(ev, svg){
+    if(!state) return;
+    var s=state, i=idxFrom(ev,svg);
+    if(layer) layer.remove(); if(layer2) layer2.remove();
+    layer=el('g',{}); layer2=el('g',{});
+    var x=s.X(i);
+    layer.appendChild(el('line',{x1:x,x2:x,y1:PADT,y2:s.H-s.PADB,'class':'cross'}));
+    layer.appendChild(el('circle',{cx:x,cy:s.Y(s.bh[i]),r:4,'class':'dot-b'}));
+    layer.appendChild(el('circle',{cx:x,cy:s.Y(s.r.equity[i]),r:4,'class':'dot-a'}));
+    layer2.appendChild(el('line',{x1:x,x2:x,y1:PADT,y2:s.H2-26,'class':'cross'}));
+    layer2.appendChild(el('circle',{cx:x,cy:s.Y2(s.m.dd[i]),r:4,'class':'dot-a'}));
+    eq.appendChild(layer); dd.appendChild(layer2);
+
+    tip.innerHTML='<b>'+s.r.dates[i]+'</b><br>전략 '+moneyFull(s.r.equity[i])+
+      '<br>보유 '+moneyFull(s.bh[i])+'<br>낙폭 '+pcRaw(s.m.dd[i],1);
+    tip.classList.add('on');
+    var box=eq.getBoundingClientRect(), px=x/W*box.width;
+    var wrapW=eq.parentNode.clientWidth;
+    tip.style.left=Math.min(Math.max(px+12,4),wrapW-tip.offsetWidth-4)+'px';
+    tip.style.top='8px';
+  }
+  function hide(){
+    if(layer){ layer.remove(); layer=null; }
+    if(layer2){ layer2.remove(); layer2=null; }
+    $('tip-eq').classList.remove('on');
+  }
+  [eq,dd].forEach(function(svg){
+    svg.addEventListener('mousemove',function(e){ show(e,svg); });
+    svg.addEventListener('mouseleave',hide);
+    svg.addEventListener('touchstart',function(e){ show(e,svg); },{passive:true});
+    svg.addEventListener('touchmove',function(e){ show(e,svg); },{passive:true});
+    svg.addEventListener('touchend',hide);
+  });
+}
+
+/* ── 연도별 막대 ─────────────────────────────────────────── */
+function drawAnnual(rows){
+  var svg=$('svg-yr'), H=260, PADB=30, PT=22, h=H-PT-PADB;
+  clear(svg);
+  var lo=0, hi=0;
+  rows.forEach(function(o){ if(o.ret<lo) lo=o.ret; if(o.ret>hi) hi=o.ret; });
+  var pad=(hi-lo)*0.12 || 0.1; hi+=pad; lo-=pad;
+  var Y=function(v){ return PT+h-(v-lo)/(hi-lo)*h; };
+  var n=rows.length, bw=(W-PADL-PADR)/n, bar=Math.min(bw*0.62,44);
+  var y0=Y(0);
+  svg.appendChild(el('line',{x1:PADL,x2:W-PADR,y1:y0,y2:y0,'class':'zero'}));
+  svg.appendChild(el('text',{x:PADL-8,y:y0+3,'class':'axis-l','text-anchor':'end'},'0%'));
+
+  rows.forEach(function(o,i){
+    var cx=PADL+bw*(i+0.5), y=Y(o.ret);
+    var top=Math.min(y,y0), hh=Math.max(Math.abs(y-y0),1.5);
+    svg.appendChild(el('rect',{x:cx-bar/2,y:top,width:bar,height:hh,rx:2,'class':'bar-a',
+      'data-i':i}));
+    svg.appendChild(el('text',{x:cx,y:o.ret>=0?top-6:top+hh+13,'class':'axis-l',
+      'text-anchor':'middle'},(o.ret*100).toFixed(0)+'%'));
+    svg.appendChild(el('text',{x:cx,y:H-9,'class':'axis-l','text-anchor':'middle'},
+      o.year.slice(2)));
+  });
+
+  var tip=$('tip-yr');
+  svg.onmousemove=function(ev){
+    var box=svg.getBoundingClientRect();
+    var vx=(ev.clientX-box.left)/box.width*W;
+    var i=Math.floor((vx-PADL)/bw);
+    if(i<0||i>=n){ tip.classList.remove('on'); return; }
+    var o=rows[i];
+    tip.innerHTML='<b>'+o.year+'</b><br>수익률 '+pc(o.ret)+'<br>연중 MDD '+pcRaw(o.mdd,1)+
+      '<br>연말 '+moneyFull(o.last);
+    tip.classList.add('on');
+    var px=(PADL+bw*(i+0.5))/W*box.width;
+    tip.style.left=Math.min(Math.max(px+12,4),svg.parentNode.clientWidth-tip.offsetWidth-4)+'px';
+    tip.style.top='4px';
+  };
+  svg.onmouseleave=function(){ tip.classList.remove('on'); };
+
+  var tb=$('yr-body'); tb.innerHTML='';
+  rows.forEach(function(o){
+    tb.insertAdjacentHTML('beforeend','<tr><td>'+esc(o.year)+'</td>'+
+      '<td class="n">'+pc(o.ret)+'</td><td class="n">'+pcRaw(o.mdd,2)+'</td>'+
+      '<td class="n">'+moneyFull(o.last)+'</td></tr>');
+  });
+}
+
+/* ── 실행 ────────────────────────────────────────────────── */
+function stat(label,val,sub){
+  return '<div class="stat"><dt>'+esc(label)+'</dt><dd>'+esc(val)+'</dd>'+
+         (sub?'<span class="sub">'+esc(sub)+'</span>':'')+'</div>';
+}
+function run(){
+  if(!hist) return;
+  var v=readForm();
+  if(v.end<v.start){ v.end=v.start; $('c-end').value=v.end; }
+  var cfg={ start:v.start+'-01-01', end:v.end+'-12-31', seed:v.seed,
+            params:toParams(v), modes:cfgModes };
+  var r=B.backtest(hist,cfg);
+  if(!r){ $('loading').textContent='선택한 구간에 데이터가 없습니다.'; return; }
+  var m=B.metrics(r), bh=B.buyHold(r);
+  var bhCagr=Math.pow(bh[bh.length-1]/bh[0],1/m.years)-1;
+
+  $('loading').hidden=true; $('stats').hidden=false; $('curve').hidden=false;
+  $('stats').innerHTML=
+    stat('CAGR', pcRaw(m.cagr), 'TQQQ 보유 '+pcRaw(bhCagr))+
+    stat('최대 낙폭', pcRaw(m.mdd), 'Calmar '+(m.calmar?m.calmar.toFixed(2):'—'))+
+    stat('최종 자산', money(m.final), '시드 '+moneyFull(r.seed0))+
+    stat('승률', pcRaw(m.winrate), m.trades.toLocaleString('en-US')+'건 청산');
+
+  var md=r.modeDays, tot=md.bottom+md.middle+md.top||1;
+  $('sum-meta').textContent=r.dates[0]+' ~ '+r.dates[r.dates.length-1]+' · '+
+    m.years.toFixed(1)+'년 · 모드 비중 바닥 '+(md.bottom/tot*100).toFixed(0)+
+    '% 중간 '+(md.middle/tot*100).toFixed(0)+'% 천장 '+(md.top/tot*100).toFixed(0)+'%';
+  $('nav-range').textContent=v.start+'–'+v.end;
+  $('ctl-state').textContent=isDefault(v)?'방법론 v1.2 확정 파라미터'
+    : '확정 파라미터에서 변경됨';
+  $('ctl-state').className='meta'+(isDefault(v)?'':' dirty');
+
+  drawCurve(r,m,bh);
+  drawAnnual(B.annual(r));
+
+  var tb=$('roll-body'); tb.innerHTML='';
+  [5,10].forEach(function(win){
+    var rr=B.rolling(hist,win,{ seed:v.seed, params:cfg.params, modes:cfgModes,
+      start:v.start+'-01-01', end:v.end+'-12-31' });
+    rr=rr.filter(function(x){ return x.start>=v.start && x.start+win-1<=v.end; });
+    if(!rr.length){ tb.insertAdjacentHTML('beforeend',
+      '<tr><td>'+win+'년</td><td class="n">0</td><td colspan="5" class="n">구간이 부족합니다</td></tr>');
+      return; }
+    var cs=rr.map(function(x){return x.cagr;}).sort(function(a,b){return a-b;});
+    var mid=cs.length%2?cs[(cs.length-1)/2]:(cs[cs.length/2-1]+cs[cs.length/2])/2;
+    var avg=cs.reduce(function(a,b){return a+b;},0)/cs.length;
+    var wm=Math.min.apply(null,rr.map(function(x){return x.mdd;}));
+    tb.insertAdjacentHTML('beforeend','<tr><td>'+win+'년</td>'+
+      '<td class="n">'+rr.length+'</td>'+
+      '<td class="n">'+pcRaw(cs[0])+'</td><td class="n">'+pcRaw(mid)+'</td>'+
+      '<td class="n">'+pcRaw(avg)+'</td><td class="n">'+pcRaw(cs[cs.length-1])+'</td>'+
+      '<td class="n">'+pcRaw(wm)+'</td></tr>');
+  });
+}
+
+var t=null;
+function schedule(){ if(t) clearTimeout(t); t=setTimeout(run,180); }
+IDS.forEach(function(id){ $(id).addEventListener('input',schedule); });
+$('btn-reset').addEventListener('click',function(){ writeForm(DEF); run(); });
+
+writeForm(DEF);
+hookCrosshair();
+fetch('data/history.json',{cache:'force-cache'})
+  .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+  .then(function(d){
+    hist=d; cfgModes=B.assignModes(hist);
+    var last=+hist.dates[hist.dates.length-1].slice(0,4);
+    $('c-end').max=last; $('c-start').max=last;
+    run();
+  })
+  .catch(function(){
+    $('loading').textContent='가격 데이터를 불러오지 못했습니다. 잠시 후 새로고침해 주세요.';
+  });
+
+var rt=null;
+window.addEventListener('resize',function(){ if(rt) clearTimeout(rt); rt=setTimeout(run,220); });
+})();
+</script>
+</body>
+</html>

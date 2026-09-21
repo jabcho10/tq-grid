@@ -50,12 +50,15 @@ jobs:
           git commit -m "chore(data): 종가 갱신 $(date -u +%Y-%m-%dT%H:%MZ)"
           git push
 
+      - name: JS 엔진 문법 검사
+        run: node --check assets/backtest.js
+
       - name: 사이트 구성
         run: |
-          mkdir -p _site/data
-          cp index.html _site/
-          cp .nojekyll _site/
-          cp data/prices.json _site/data/
+          mkdir -p _site/data _site/assets
+          cp index.html backtest.html .nojekyll _site/
+          cp assets/site.css assets/backtest.js _site/assets/
+          cp data/prices.json data/history.json _site/data/
           ls -R _site
 
       - uses: actions/configure-pages@v5
