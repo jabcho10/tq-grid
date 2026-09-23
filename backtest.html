@@ -17,7 +17,7 @@ html,body{margin:0}
 img{max-width:100%}
 [hidden]{display:none!important}
 </style>
-<link rel="stylesheet" href="assets/site.css?v=2">
+<link rel="stylesheet" href="assets/site.css?v=3">
 <style>
 /* ── 백테스트 전용 ─────────────────────────────────────────
    차트는 단일 액센트(Action Blue) + 중립 회색만 쓴다.
@@ -71,17 +71,6 @@ img{max-width:100%}
   grid-template-columns:repeat(auto-fit,minmax(132px,1fr))}
 .ctl .field label{font-size:12px;letter-spacing:-.12px}
 .ctl .field input,.ctl .field select{height:40px;padding:8px 16px;font-size:15px}
-.seg{display:flex;flex-wrap:wrap;gap:var(--s-xs);margin-bottom:var(--s-lg)}
-.seg button{appearance:none;background:transparent;border:1px solid var(--hairline);
-  color:var(--ink-muted-80);font-family:var(--text);font-size:14px;line-height:1.29;
-  letter-spacing:-.224px;border-radius:var(--r-pill);padding:8px 15px;cursor:pointer;
-  white-space:nowrap}
-.seg button:hover{color:var(--ink)}
-.seg button[aria-pressed="true"]{background:var(--ink);color:var(--on-dark);
-  border-color:transparent}
-.seg button:active{transform:scale(.95)}
-.seg button:focus-visible{outline:2px solid var(--primary-focus);outline-offset:2px}
-@media (prefers-reduced-motion:reduce){ .seg button:active{transform:none} }
 .linknote{margin:var(--s-md) 0 0;font-size:12px;letter-spacing:-.12px;color:var(--ink-muted-48)}
 .linknote .link-btn{font-size:12px;margin-left:var(--s-xs)}
 .ctlgroup{margin-top:var(--s-lg)}

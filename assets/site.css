@@ -78,6 +78,19 @@ h1,h2,h3,p,dl,dd{margin:0}
 .sub-nav .links a{font-size:14px;font-weight:400;letter-spacing:-.224px;
   color:var(--ink);text-decoration:none;white-space:nowrap}
 .sub-nav .links a:hover{color:var(--primary)}
+/* 세그먼트 칩 — 종목·기간처럼 서로 배타적인 선택 (주문서·백테스트 공용) */
+.seg{display:flex;flex-wrap:wrap;gap:var(--s-xs);margin-bottom:var(--s-lg)}
+.seg button{appearance:none;background:transparent;border:1px solid var(--hairline);
+  color:var(--ink-muted-80);font-family:var(--text);font-size:14px;line-height:1.29;
+  letter-spacing:-.224px;border-radius:var(--r-pill);padding:8px 15px;cursor:pointer;
+  white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--on-dark);
+  border-color:transparent}
+.seg button:active{transform:scale(.95)}
+.seg button:focus-visible{outline:2px solid var(--primary-focus);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){ .seg button:active{transform:none} }
+
 /* 페이지 이동 버튼 — .links 는 좁은 화면에서 숨으므로 그 바깥에 둔다 */
 .sub-nav .navswitch{margin-left:auto;display:inline-flex;align-items:center;
   font-family:var(--text);font-size:14px;font-weight:400;line-height:1.29;

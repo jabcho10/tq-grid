@@ -151,6 +151,14 @@ def build() -> dict:
     tqqq, tqqq_src = series("TQQQ")
     qqq, qqq_src = series("QQQ")
 
+    # 주문서의 두 번째 종목. 여기서 실패해도 TQQQ 주문은 나가야 하므로
+    # 없으면 없는 대로 내보내고, history.json 도 그날은 건너뛴다.
+    try:
+        soxl = from_yahoo("SOXL")
+    except Exception as exc:                                      # noqa: BLE001
+        print(f"SOXL 수집 실패: {exc}", file=sys.stderr)
+        soxl = {}
+
     tqqq_date = max(tqqq)
     tqqq_close = tqqq[tqqq_date]
 
@@ -176,7 +184,11 @@ def build() -> dict:
         "order_date": order_date.isoformat(),
         "partial": partial,
     }
-    return payload, tqqq, qqq
+    if soxl:
+        soxl_date = max(soxl)
+        payload["soxl"] = {"date": soxl_date, "close": soxl[soxl_date]}
+        payload["source"]["soxl"] = "yahoo"
+    return payload, tqqq, qqq, soxl
 
 
 def merge_history(series_by_key: dict) -> int:
@@ -222,7 +234,7 @@ def merge_history(series_by_key: dict) -> int:
 
 def main() -> int:
     try:
-        data, tqqq, qqq = build()
+        data, tqqq, qqq, soxl = build()
     except Exception as exc:                                      # noqa: BLE001
         print(f"수집 실패: {exc}", file=sys.stderr)
         return 1
@@ -231,9 +243,7 @@ def main() -> int:
     # 달라질 수 있어, 과거 구간과 섞이면 백테스트 결과를 조용히 왜곡한다.
     if data["source"]["tqqq"] == "yahoo" and data["source"]["qqq"] == "yahoo":
         try:
-            # 백테스트 전용 종목. 주문서(prices.json)는 건드리지 않으므로
-            # 여기서 실패해도 시세 갱신은 그대로 나간다.
-            added = merge_history({"tqqq": tqqq, "qqq": qqq, "soxl": from_yahoo("SOXL")})
+            added = merge_history({"tqqq": tqqq, "qqq": qqq, "soxl": soxl})
             print(f"history.json: 거래일 {added}일 추가", file=sys.stderr)
         except Exception as exc:                                  # noqa: BLE001
             print(f"history.json 갱신 실패: {exc}", file=sys.stderr)   # 시세 갱신은 계속한다
