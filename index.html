@@ -17,7 +17,7 @@ img{max-width:100%}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Noto+Sans+KR:wght@300;400;600;700&display=swap">
-<link rel="stylesheet" href="assets/site.css?v=3">
+<link rel="stylesheet" href="assets/site.css?v=4">
 </head>
 <body>
 <div class="navstack">
@@ -563,7 +563,7 @@ function f(k,v,dark){
 }
 function renderWeights(c){
   var head='<th>모드</th>', i;
-  for(i=1;i<=MAX_TIER;i++) head+='<th>'+i+'티어</th>';
+  for(i=1;i<=MAX_TIER;i++) head+='<th>'+i+'<span class="tierword">티어</span></th>';
   $('weight-head').innerHTML=head;
 
   var nt=state.positions.length+1, body='';

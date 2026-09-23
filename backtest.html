@@ -17,7 +17,7 @@ html,body{margin:0}
 img{max-width:100%}
 [hidden]{display:none!important}
 </style>
-<link rel="stylesheet" href="assets/site.css?v=3">
+<link rel="stylesheet" href="assets/site.css?v=4">
 <style>
 /* ── 백테스트 전용 ─────────────────────────────────────────
    차트는 단일 액센트(Action Blue) + 중립 회색만 쓴다.
@@ -259,7 +259,7 @@ details.tableview[open] > summary{margin-bottom:var(--s-md)}
       <span class="meta">선택 구간에 온전히 들어가는 연 단위 창만 셉니다</span>
     </div>
     <div class="tblwrap">
-      <table>
+      <table class="cardtable">
         <thead><tr><th>구간</th><th>표본</th><th>최악 CAGR</th><th>중앙 CAGR</th>
           <th>평균 CAGR</th><th>최고 CAGR</th><th>최악 MDD</th></tr></thead>
         <tbody id="roll-body"></tbody>
@@ -739,17 +739,20 @@ function run(){
       start:y0+'-01-01', end:y1+'-12-31' }) : [];
     rr=rr.filter(function(x){ return x.start>=y0 && x.start+win-1<=y1; });
     if(!rr.length){ tb.insertAdjacentHTML('beforeend',
-      '<tr><td>'+win+'년</td><td class="n">0</td><td colspan="5" class="n">구간이 부족합니다</td></tr>');
+      '<tr><td data-l="구간">'+win+'년</td><td class="n" data-l="표본">0</td>'+
+      '<td colspan="5" class="n" data-l="결과">구간이 부족합니다</td></tr>');
       return; }
     var cs=rr.map(function(x){return x.cagr;}).sort(function(a,b){return a-b;});
     var mid=cs.length%2?cs[(cs.length-1)/2]:(cs[cs.length/2-1]+cs[cs.length/2])/2;
     var avg=cs.reduce(function(a,b){return a+b;},0)/cs.length;
     var wm=Math.min.apply(null,rr.map(function(x){return x.mdd;}));
-    tb.insertAdjacentHTML('beforeend','<tr><td>'+win+'년</td>'+
-      '<td class="n">'+rr.length+'</td>'+
-      '<td class="n">'+pcRaw(cs[0])+'</td><td class="n">'+pcRaw(mid)+'</td>'+
-      '<td class="n">'+pcRaw(avg)+'</td><td class="n">'+pcRaw(cs[cs.length-1])+'</td>'+
-      '<td class="n">'+pcRaw(wm)+'</td></tr>');
+    tb.insertAdjacentHTML('beforeend','<tr><td data-l="구간">'+win+'년</td>'+
+      '<td class="n" data-l="표본">'+rr.length+'</td>'+
+      '<td class="n" data-l="최악 CAGR">'+pcRaw(cs[0])+'</td>'+
+      '<td class="n" data-l="중앙 CAGR">'+pcRaw(mid)+'</td>'+
+      '<td class="n" data-l="평균 CAGR">'+pcRaw(avg)+'</td>'+
+      '<td class="n" data-l="최고 CAGR">'+pcRaw(cs[cs.length-1])+'</td>'+
+      '<td class="n" data-l="최악 MDD">'+pcRaw(wm)+'</td></tr>');
   });
 }
 
