@@ -179,18 +179,28 @@ def build() -> dict:
     return payload, tqqq, qqq
 
 
-def merge_history(tqqq: dict, qqq: dict) -> int:
+def merge_history(series_by_key: dict) -> int:
     """백테스트가 읽는 일별 종가(history.json)에 새 거래일을 이어 붙인다.
 
     주문서와 백테스트가 같은 시세를 보게 하는 연결 고리다. 기존 값은 손대지
     않고 뒤에만 덧붙이므로, 과거 구간의 백테스트 결과는 그대로 유지된다.
+    종목 배열은 인덱스로 맞물리므로, 한 종목이라도 값이 없는 날은 붙이지
+    않는다. 다음 실행이 3개월 범위 안에서 다시 채운다.
     """
     with open(HIST, encoding="utf-8") as fh:
         hist = json.load(fh)
 
+    keys = [k for k, v in hist.items() if k != "dates" and isinstance(v, list)]
+    absent = [k for k in keys if k not in series_by_key]
+    if absent:
+        print(f"history.json: {', '.join(absent)} 시세가 없어 건너뜁니다.", file=sys.stderr)
+        return 0
+
     last = hist["dates"][-1]
     known = set(hist["dates"])
-    fresh = sorted(d for d in tqqq if d > last and d not in known and d in qqq)
+    fresh = sorted(d for d in series_by_key["tqqq"]
+                   if d > last and d not in known
+                   and all(d in series_by_key[k] for k in keys))
     if not fresh:
         return 0
 
@@ -202,8 +212,8 @@ def merge_history(tqqq: dict, qqq: dict) -> int:
 
     for day in fresh:
         hist["dates"].append(day)
-        hist["tqqq"].append(round(tqqq[day], 4))
-        hist["qqq"].append(round(qqq[day], 4))
+        for key in keys:
+            hist[key].append(round(series_by_key[key][day], 4))
 
     with open(HIST, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(hist, fh, separators=(",", ":"))
@@ -221,7 +231,9 @@ def main() -> int:
     # 달라질 수 있어, 과거 구간과 섞이면 백테스트 결과를 조용히 왜곡한다.
     if data["source"]["tqqq"] == "yahoo" and data["source"]["qqq"] == "yahoo":
         try:
-            added = merge_history(tqqq, qqq)
+            # 백테스트 전용 종목. 주문서(prices.json)는 건드리지 않으므로
+            # 여기서 실패해도 시세 갱신은 그대로 나간다.
+            added = merge_history({"tqqq": tqqq, "qqq": qqq, "soxl": from_yahoo("SOXL")})
             print(f"history.json: 거래일 {added}일 추가", file=sys.stderr)
         except Exception as exc:                                  # noqa: BLE001
             print(f"history.json 갱신 실패: {exc}", file=sys.stderr)   # 시세 갱신은 계속한다
