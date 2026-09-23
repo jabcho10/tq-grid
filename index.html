@@ -216,6 +216,34 @@ function nextTradingDay(d){ var x=new Date(d.getTime());
   while(!isTradingDay(x)) x.setUTCDate(x.getUTCDate()+1); return x; }
 function backTradingDays(d,n){ var x=new Date(d.getTime());
   while(n>0){ x.setUTCDate(x.getUTCDate()-1); if(isTradingDay(x)) n--; } return x; }
+/* 브라우저 시간대와 무관하게 미 동부(ET) 기준 날짜/시각을 읽는다. */
+function etNow(){
+  try{
+    var parts=new Intl.DateTimeFormat('en-US',{ timeZone:'America/New_York', hour12:false,
+      year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit' }).formatToParts(new Date());
+    var o={}; parts.forEach(function(x){ o[x.type]=x.value; });
+    if(o.year&&o.month&&o.day) return { date:o.year+'-'+o.month+'-'+o.day, hour:(+o.hour)%24 };
+  }catch(e){}
+  var d=new Date();                       // Intl 미지원이면 UTC로 대체
+  return { date:iso(d), hour:d.getUTCHours() };
+}
+/* 주문 대상 거래일 — 정규장 마감(16:00 ET) 전이면 그날, 마감 뒤면 다음 거래일. */
+function currentOrderDate(){
+  var e=etNow(), d=parseISO(e.date);
+  if(isTradingDay(d) && e.hour<16) return iso(d);
+  var x=new Date(d.getTime()); x.setUTCDate(x.getUTCDate()+1);
+  return iso(nextTradingDay(x));
+}
+/* 이번 주 모드 기준일 — 주문일이 속한 주의 월요일 직전 마지막 거래일.
+   (수집기 scripts/fetch_prices.py 의 week_start/cutoff 규칙과 같다.) */
+function weekRefDate(orderISO){
+  var d=parseISO(orderISO);
+  if(!orderISO||isNaN(d.getTime())) return null;
+  var x=new Date(d.getTime());
+  x.setUTCDate(x.getUTCDate()-((x.getUTCDay()+6)%7));       // 그 주 월요일
+  do { x.setUTCDate(x.getUTCDate()-1); } while(!isTradingDay(x));
+  return iso(x);
+}
 function elapsed(fromISO,toISO){
   if(!fromISO||!toISO) return 0;
   var a=parseISO(fromISO), b=parseISO(toISO), n=0;
@@ -241,7 +269,7 @@ function tpRateOf(m,t){ return (m==='top'&&t===1)?P.top.tp1:P[m].tp; }
 function buyRateOf(m,t){ return (m==='top'&&t===1)?P.top.buy1:P[m].buy; }
 
 /* ── 상태 ────────────────────────────────────────────────── */
-var today = nextTradingDay(new Date());
+var today = parseISO(currentOrderDate());
 var state = {
   orderDate: iso(today),
   prevClose: 73.06,
@@ -263,7 +291,8 @@ function persistable(){
 }
 function adopt(d){
   if(!d||typeof d!=='object') return;
-  if(d.orderDate) state.orderDate=d.orderDate;
+  // 저장된 주문일이 이미 지난 날짜면 버리고 오늘 기준으로 다시 잡는다
+  if(d.orderDate && d.orderDate>=currentOrderDate()) state.orderDate=d.orderDate;
   if(d.prevClose!=null) state.prevClose=+d.prevClose;
   if(d.qqqDate) state.qqqDate=d.qqqDate;
   if(d.qqqClose!=null) state.qqqClose=+d.qqqClose;
@@ -312,11 +341,16 @@ function applyFeed(d){
   state.prevClose=+d.tqqq.close;
   state.qqqClose=+d.qqq_week.close;
   state.qqqDate=d.qqq_week.date;
-  if(d.order_date){ state.orderDate=d.order_date; $('a-date').value=d.order_date; }
+  if(d.order_date && d.order_date>state.orderDate){
+    state.orderDate=d.order_date; $('a-date').value=d.order_date;
+  }
   syncInputs(); render();
   $('feed-meta').textContent =
     'TQQQ '+d.tqqq.date+' 종가 · QQQ '+d.qqq_week.date+' 종가 · '+
-    utcLabel(d.updated)+' 자동 수집'+(d.partial?' · 장중 시세이니 주의하세요':'');
+    utcLabel(d.updated)+' 자동 수집'+(d.partial?' · 장중 시세이니 주의하세요':'')+
+    ((d.order_date&&d.order_date<state.orderDate)
+      ? ' · 수집본이 '+d.order_date+' 주문일 기준이라 시세가 뒤처져 있습니다'
+      : '');
 }
 function loadFeed(manual){
   if(typeof fetch!=='function') return;
@@ -414,7 +448,10 @@ function render(){
       f('중심주가', usd(c.center), dark)+
       f('기준일', state.qqqDate, dark)+
       f('경계까지', edge, dark);
-    $('mode-meta').textContent=state.qqqDate+' 종가로 확정 · 이번 주 전체 적용';
+    var ref=weekRefDate(state.orderDate);
+    $('mode-meta').textContent = (!ref||state.qqqDate===ref)
+      ? state.qqqDate+' 종가로 확정 · 이번 주 전체 적용'
+      : '이번 주 기준일은 '+ref+'인데 '+state.qqqDate+' 종가가 들어와 있습니다 · 모드 확인 필요';
   } else {
     $('mode-word').textContent='미확정';
     $('mode-dev').innerHTML='QQQ 기준 종가와 기준일을 입력하세요';
@@ -578,6 +615,18 @@ function toast(m){
 }
 
 $('btn-reload').addEventListener('click',function(){ loadFeed(true); });
+
+/* 탭을 열어둔 사이 날짜가 넘어가면 주문일을 따라 올린다. */
+function refreshOrderDate(){
+  var auto=currentOrderDate();
+  if(auto<=state.orderDate) return;
+  state.orderDate=auto; $('a-date').value=auto;
+  syncInputs(); save(); render(); loadFeed(false);
+}
+setInterval(refreshOrderDate,60000);
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden) refreshOrderDate();
+});
 
 $('a-date').value=state.orderDate;
 syncInputs();
