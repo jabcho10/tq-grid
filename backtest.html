@@ -89,6 +89,24 @@ img{max-width:100%}
   margin:0 0 var(--s-sm);color:var(--ink-muted-80)}
 .dirty{font-size:12px;letter-spacing:-.12px;color:var(--primary)}
 
+/* 구간별 파라미터 — 평소엔 접어 두고 값만 요약해 보여준다 */
+details.foldgroup{margin-top:var(--s-lg);border-top:1px solid var(--hairline);
+  padding-top:var(--s-md)}
+details.foldgroup > summary{cursor:pointer;list-style:none;display:flex;
+  align-items:baseline;gap:var(--s-sm);flex-wrap:wrap;
+  font-size:14px;font-weight:600;letter-spacing:-.224px;color:var(--primary)}
+details.foldgroup > summary::-webkit-details-marker{display:none}
+details.foldgroup > summary::before{content:'▸';font-size:11px;font-weight:400;
+  line-height:1;transform:translateY(-1px)}
+details.foldgroup[open] > summary::before{content:'▾'}
+details.foldgroup > summary:focus-visible{outline:2px solid var(--primary-focus);
+  outline-offset:2px;border-radius:var(--r-xs)}
+details.foldgroup > summary .vals{font-weight:400;color:var(--ink-muted-48);
+  font-variant-numeric:tabular-nums}
+details.foldgroup > summary:hover .vals{color:var(--ink-muted-80)}
+details.foldgroup[open] > summary{margin-bottom:var(--s-xs)}
+details.foldgroup .ctlgroup:first-of-type{margin-top:var(--s-md)}
+
 .tblnote{margin-top:var(--s-sm);font-size:12px;letter-spacing:-.12px;color:var(--ink-muted-48)}
 details.tableview{margin-top:var(--s-lg)}
 details.tableview > summary{cursor:pointer;font-size:14px;letter-spacing:-.224px;
@@ -140,6 +158,8 @@ details.tableview[open] > summary{margin-bottom:var(--s-md)}
         <input type="number" id="c-seed" min="1000" step="1000"></div>
     </div>
     <p class="linknote" id="link-note"></p>
+    <details class="foldgroup" id="params">
+      <summary>구간별 파라미터<span class="vals" id="params-sum"></span></summary>
     <div class="ctlgroup">
       <h3>바닥 모드</h3>
       <div class="ctl">
@@ -177,6 +197,7 @@ details.tableview[open] > summary{margin-bottom:var(--s-md)}
           <input type="number" id="t-moc" min="1" max="120" step="1"></div>
       </div>
     </div>
+    </details>
   </div>
 </section>
 
@@ -446,6 +467,14 @@ function toParams(v){
   };
 }
 
+/* 접은 채로도 값을 읽을 수 있게 요약한다 */
+function nz(x){ return String(Math.round(x*1000)/1000).replace('-','−'); }
+function paramSummary(v){
+  return '매수/익절·MOC — 바닥 '+nz(v.b_buy)+'/'+nz(v.b_tp)+'·'+nz(v.b_moc)+
+         ' · 중간 '+nz(v.m_buy)+'/'+nz(v.m_tp)+'·'+nz(v.m_moc)+
+         ' · 천장 '+nz(v.t_buy1)+'/'+nz(v.t_tp1)+', '+nz(v.t_buy)+'/'+nz(v.t_tp)+'·'+nz(v.t_moc);
+}
+
 /* ── 포맷 ────────────────────────────────────────────────── */
 function pc(x,d){ d=(d==null?2:d); return (x>=0?'+':'−')+Math.abs(x*100).toFixed(d)+'%'; }
 function pcRaw(x,d){ d=(d==null?2:d); return (x*100).toFixed(d)+'%'; }
@@ -708,6 +737,7 @@ function run(){
   $('ctl-state').textContent = isDefault(v) ? TUNED[ticker].note
     : tname+' 기준 파라미터에서 변경됨';
   $('ctl-state').className='meta'+(isDefault(v)?'':' dirty');
+  $('params-sum').textContent=paramSummary(v);
 
   drawCurve(r,m,bh);
   drawAnnual(B.annual(r));
@@ -743,6 +773,12 @@ $('btn-reset').addEventListener('click',function(){
   if(DATA_END && DEF.end>DATA_END) $('c-end').value=DATA_END;
   if(b!=null) $('c-seed').value=b;          // 주문서와의 연결은 유지한다
   run();
+});
+
+/* 접힘 상태는 사람마다 취향이 갈리므로 마지막 상태를 기억한다 */
+try{ if(localStorage.getItem('tqqq-grid-params-open')==='1') $('params').open=true; }catch(e){}
+$('params').addEventListener('toggle',function(){
+  try{ localStorage.setItem('tqqq-grid-params-open', this.open?'1':'0'); }catch(e){}
 });
 
 TICKERS.forEach(function(tk){
