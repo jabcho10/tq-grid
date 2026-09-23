@@ -97,6 +97,18 @@ def from_yahoo(symbol: str) -> dict:
             continue
         day = dt.datetime.fromtimestamp(ts, dt.timezone.utc).astimezone(ET).date()
         out[day.isoformat()] = round(float(close), 4)
+
+    # 마감 직후 몇 시간은 그날 일봉의 close 가 null 로 비어 있다. 그대로 두면
+    # 한 세션 뒤처진 종가로 주문이 나간다. 정규장이 끝났으면(= 마지막 정규장
+    # 체결 시각이 20분 넘게 지났으면 — 조기 마감일도 함께 걸린다) meta 의
+    # 확정 종가로 그날 값을 채운다. 장중에는 건드리지 않는다.
+    meta = res.get("meta") or {}
+    stamp, price = meta.get("regularMarketTime"), meta.get("regularMarketPrice")
+    if stamp and price is not None:
+        last = dt.datetime.fromtimestamp(stamp, dt.timezone.utc).astimezone(ET)
+        over = (dt.datetime.now(ET) - last) >= dt.timedelta(minutes=20)
+        if over and last.date().isoformat() not in out:
+            out[last.date().isoformat()] = round(float(price), 4)
     return out
 
 
