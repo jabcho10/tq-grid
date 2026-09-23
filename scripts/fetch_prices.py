@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 ET = ZoneInfo("America/New_York")
 UA = {"User-Agent": "Mozilla/5.0 (compatible; tqqq-grid-order-desk/1.0)"}
 OUT = os.path.join(os.path.dirname(__file__), "..", "data", "prices.json")
+HIST = os.path.join(os.path.dirname(__file__), "..", "data", "history.json")
 
 # NYSE 휴장일 (index.html 의 목록과 동일하게 유지할 것)
 HOLIDAYS = {
@@ -167,7 +168,7 @@ def build() -> dict:
     partial = (tqqq_date == now_et.date().isoformat()
                and now_et.time() < dt.time(16, 5))
 
-    return {
+    payload = {
         "updated": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
         "source": {"tqqq": tqqq_src, "qqq": qqq_src},
         "tqqq": {"date": tqqq_date, "close": tqqq_close},
@@ -175,14 +176,57 @@ def build() -> dict:
         "order_date": order_date.isoformat(),
         "partial": partial,
     }
+    return payload, tqqq, qqq
+
+
+def merge_history(tqqq: dict, qqq: dict) -> int:
+    """백테스트가 읽는 일별 종가(history.json)에 새 거래일을 이어 붙인다.
+
+    주문서와 백테스트가 같은 시세를 보게 하는 연결 고리다. 기존 값은 손대지
+    않고 뒤에만 덧붙이므로, 과거 구간의 백테스트 결과는 그대로 유지된다.
+    """
+    with open(HIST, encoding="utf-8") as fh:
+        hist = json.load(fh)
+
+    last = hist["dates"][-1]
+    known = set(hist["dates"])
+    fresh = sorted(d for d in tqqq if d > last and d not in known and d in qqq)
+    if not fresh:
+        return 0
+
+    expected = next_trading_day(dt.date.fromisoformat(last)).isoformat()
+    if fresh[0] != expected:
+        print(f"경고: {last} 다음 거래일 {expected} 이 수집 범위 밖입니다 — "
+              f"{fresh[0]} 부터 붙입니다. 백테스트 구간에 구멍이 생깁니다.",
+              file=sys.stderr)
+
+    for day in fresh:
+        hist["dates"].append(day)
+        hist["tqqq"].append(round(tqqq[day], 4))
+        hist["qqq"].append(round(qqq[day], 4))
+
+    with open(HIST, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(hist, fh, separators=(",", ":"))
+    return len(fresh)
 
 
 def main() -> int:
     try:
-        data = build()
+        data, tqqq, qqq = build()
     except Exception as exc:                                      # noqa: BLE001
         print(f"수집 실패: {exc}", file=sys.stderr)
         return 1
+
+    # 백테스트 시계열은 야후 종가로만 이어 붙인다. 대체 소스는 조정 방식이
+    # 달라질 수 있어, 과거 구간과 섞이면 백테스트 결과를 조용히 왜곡한다.
+    if data["source"]["tqqq"] == "yahoo" and data["source"]["qqq"] == "yahoo":
+        try:
+            added = merge_history(tqqq, qqq)
+            print(f"history.json: 거래일 {added}일 추가", file=sys.stderr)
+        except Exception as exc:                                  # noqa: BLE001
+            print(f"history.json 갱신 실패: {exc}", file=sys.stderr)   # 시세 갱신은 계속한다
+    else:
+        print("history.json: 야후가 아닌 소스라 이어 붙이지 않았습니다.", file=sys.stderr)
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8", newline="\n") as fh:
