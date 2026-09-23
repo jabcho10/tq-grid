@@ -71,6 +71,19 @@ img{max-width:100%}
   grid-template-columns:repeat(auto-fit,minmax(132px,1fr))}
 .ctl .field label{font-size:12px;letter-spacing:-.12px}
 .ctl .field input,.ctl .field select{height:40px;padding:8px 16px;font-size:15px}
+.seg{display:flex;flex-wrap:wrap;gap:var(--s-xs);margin-bottom:var(--s-lg)}
+.seg button{appearance:none;background:transparent;border:1px solid var(--hairline);
+  color:var(--ink-muted-80);font-family:var(--text);font-size:14px;line-height:1.29;
+  letter-spacing:-.224px;border-radius:var(--r-pill);padding:8px 15px;cursor:pointer;
+  white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--on-dark);
+  border-color:transparent}
+.seg button:active{transform:scale(.95)}
+.seg button:focus-visible{outline:2px solid var(--primary-focus);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){ .seg button:active{transform:none} }
+.linknote{margin:var(--s-md) 0 0;font-size:12px;letter-spacing:-.12px;color:var(--ink-muted-48)}
+.linknote .link-btn{font-size:12px;margin-left:var(--s-xs)}
 .ctlgroup{margin-top:var(--s-lg)}
 .ctlgroup > h3{font-size:14px;font-weight:600;letter-spacing:-.224px;
   margin:0 0 var(--s-sm);color:var(--ink-muted-80)}
@@ -116,14 +129,16 @@ details.tableview[open] > summary{margin-bottom:var(--s-md)}
       <h2 class="sub">백테스트 조건</h2>
       <span class="meta" id="ctl-state">방법론 v1.2 확정 파라미터</span>
     </div>
+    <div class="seg" id="presets" role="group" aria-label="기간 선택"></div>
     <div class="ctl">
-      <div class="field"><label for="c-start">시작 연도</label>
-        <input type="number" id="c-start" min="2011" max="2026" step="1"></div>
-      <div class="field"><label for="c-end">종료 연도</label>
-        <input type="number" id="c-end" min="2011" max="2026" step="1"></div>
+      <div class="field"><label for="c-start">시작일</label>
+        <input type="date" id="c-start"></div>
+      <div class="field"><label for="c-end">종료일</label>
+        <input type="date" id="c-end"></div>
       <div class="field"><label for="c-seed">시드 ($)</label>
         <input type="number" id="c-seed" min="1000" step="1000"></div>
     </div>
+    <p class="linknote" id="link-note"></p>
     <div class="ctlgroup">
       <h3>바닥 모드</h3>
       <div class="ctl">
@@ -206,7 +221,7 @@ details.tableview[open] > summary{margin-bottom:var(--s-md)}
   <div class="inner">
     <div class="sec-head">
       <h2>연도별 수익률</h2>
-      <span class="meta">0% 기준선 아래가 손실 연도입니다</span>
+      <span class="meta">0% 기준선 아래가 손실 연도입니다 · 구간 양 끝 해는 일부 기간만 반영됩니다</span>
     </div>
     <div class="plotwrap">
       <svg class="chart" id="svg-yr" viewBox="0 0 900 260" preserveAspectRatio="none"
@@ -230,7 +245,7 @@ details.tableview[open] > summary{margin-bottom:var(--s-md)}
   <div class="inner">
     <div class="sec-head">
       <h2>롤링 검증</h2>
-      <span class="meta">시작 연도를 1년씩 옮겨가며 재계산합니다</span>
+      <span class="meta">선택 구간에 온전히 들어가는 연 단위 창만 셉니다</span>
     </div>
     <div class="tblwrap">
       <table>
@@ -260,8 +275,13 @@ details.tableview[open] > summary{margin-bottom:var(--s-md)}
 var B = window.GridBacktest, hist = null, cfgModes = null;
 var $ = function(id){ return document.getElementById(id); };
 
+/* 2010 구간은 2011년 첫 주 모드 판정용이라 백테스트 시작은 2011-01-01 이다 */
+var MIN_START = '2011-01-01';
+var DATA_END = null;                       // history.json 의 마지막 거래일
+var PRESETS = [['ytd','올해'],['1','최근 1년'],['3','최근 3년'],
+               ['5','최근 5년'],['10','최근 10년'],['all','전체']];
 var DEF = {
-  start: 2011, end: 2025, seed: 10000,
+  start: MIN_START, end: '2025-12-31', seed: 10000,
   b_buy: 5.0,  b_tp: 11.0,  b_moc: 50,
   m_buy: 1.5,  m_tp: 1.25,  m_moc: 50,
   t_buy1: -1.65, t_tp1: 0.8, t_buy: 2.0, t_tp: 2.75, t_moc: 7
@@ -272,17 +292,102 @@ var KEY = { 'c-start':'start','c-end':'end','c-seed':'seed',
   'b-buy':'b_buy','b-tp':'b_tp','b-moc':'b_moc','m-buy':'m_buy','m-tp':'m_tp','m-moc':'m_moc',
   't-buy1':'t_buy1','t-tp1':'t_tp1','t-buy':'t_buy','t-tp':'t_tp','t-moc':'t_moc' };
 
+var ISO = /^\d{4}-\d{2}-\d{2}$/;
 function readForm(){
   var v = {};
   IDS.forEach(function(id){
-    var raw = $(id).value, n = parseFloat(raw);
-    v[KEY[id]] = (raw === '' || isNaN(n)) ? DEF[KEY[id]] : n;
+    var k = KEY[id], raw = $(id).value;
+    if (k === 'start' || k === 'end'){ v[k] = ISO.test(raw) ? raw : DEF[k]; return; }
+    var n = parseFloat(raw);
+    v[k] = (raw === '' || isNaN(n)) ? DEF[k] : n;
   });
   return v;
 }
 function writeForm(v){ IDS.forEach(function(id){ $(id).value = v[KEY[id]]; }); }
+/* 기간과 시드는 바꿔 쓰라고 둔 값이므로 '확정 파라미터' 판정에서 뺀다 */
 function isDefault(v){
-  return IDS.every(function(id){ var k = KEY[id]; return Math.abs(v[k] - DEF[k]) < 1e-12; });
+  return IDS.every(function(id){
+    var k = KEY[id];
+    if (k === 'start' || k === 'end' || k === 'seed') return true;
+    return Math.abs(v[k] - DEF[k]) < 1e-12;
+  });
+}
+
+/* ── 기간 프리셋 ──────────────────────────────────────────
+   기준은 오늘이 아니라 데이터의 마지막 거래일이다. 수집기가 history.json 을
+   매 거래일 이어 붙이므로 둘은 사실상 같이 움직인다. */
+function backYears(iso, n){
+  var d = new Date(Date.UTC(+iso.slice(0,4) - n, +iso.slice(5,7) - 1, +iso.slice(8,10)));
+  d.setUTCDate(d.getUTCDate() + 1);                  // N년치가 되도록 하루 뒤
+  return d.toISOString().slice(0,10);
+}
+function presetRange(key){
+  if (!DATA_END) return null;
+  if (key === 'all') return [MIN_START, DATA_END];
+  if (key === 'ytd') return [DATA_END.slice(0,4) + '-01-01', DATA_END];
+  var s = backYears(DATA_END, +key);
+  return [s < MIN_START ? MIN_START : s, DATA_END];
+}
+function matchedPreset(v){
+  var kids = $('presets').children;
+  for (var i = 0; i < kids.length; i++){
+    var r = presetRange(kids[i].getAttribute('data-k'));
+    if (r && r[0] === v.start && r[1] === v.end) return kids[i];
+  }
+  return null;
+}
+function markPreset(v){
+  var hit = matchedPreset(v), kids = $('presets').children;
+  for (var i = 0; i < kids.length; i++)
+    kids[i].setAttribute('aria-pressed', kids[i] === hit ? 'true' : 'false');
+}
+function rangeLabel(v){
+  var hit = matchedPreset(v);
+  if (hit) return hit.textContent;
+  if (v.start.slice(5) === '01-01' && v.end.slice(5) === '12-31')
+    return v.start.slice(0,4) + '–' + v.end.slice(0,4);
+  return v.start.replace(/-/g,'.') + '–' + v.end.replace(/-/g,'.');
+}
+
+/* ── 주문서와의 연결 ──────────────────────────────────────
+   주문서(index.html)가 저장해 둔 시드를 그대로 물려받는다. 쿼리스트링이
+   있으면 그쪽이 우선이며, 여기서 바꾼 값은 주문서로 되돌려 쓰지 않는다. */
+function bookSeed(){
+  try{
+    var raw = localStorage.getItem('tqqq-grid-book');
+    if (raw){ var d = JSON.parse(raw); if (d && +d.seed > 0) return +d.seed; }
+  }catch(e){}
+  return null;
+}
+function readQuery(){
+  var out = {}, q = (location.search || '').replace(/^\?/, '');
+  q.split('&').forEach(function(kv){
+    if (!kv) return;
+    var p = kv.split('=');
+    out[decodeURIComponent(p[0])] = decodeURIComponent((p[1] || '').replace(/\+/g,' '));
+  });
+  return out;
+}
+function writeQuery(v){
+  if (!history.replaceState) return;
+  history.replaceState(null, '',
+    location.pathname + '?seed=' + v.seed + '&start=' + v.start + '&end=' + v.end +
+    (location.hash || ''));
+}
+function linkNote(v){
+  var book = bookSeed(), tail = ' · 가격 데이터 ' + (DATA_END || '—') + '까지';
+  if (book == null)
+    $('link-note').textContent = '주문서에서 시드를 정하면 여기로 이어집니다' + tail;
+  else if (Math.abs(book - v.seed) < 1e-9)
+    $('link-note').textContent = '주문서 시드 ' + moneyFull(v.seed) + ' 사용 중' + tail;
+  else {
+    $('link-note').innerHTML = '시드를 직접 지정했습니다' + esc(tail) +
+      '<button type="button" class="link-btn" id="use-book">주문서 시드 ' +
+      esc(moneyFull(book)) + ' 사용</button>';
+    $('use-book').addEventListener('click', function(){
+      $('c-seed').value = book; run();
+    });
+  }
 }
 function toParams(v){
   var w = B.DEFAULT_PARAMS;
@@ -316,6 +421,15 @@ function el(tag,attrs,text){
 }
 function clear(svg){ while(svg.firstChild) svg.removeChild(svg.firstChild); }
 function niceLogTicks(lo,hi){
+  /* 1~2년 구간에서는 10배 간격 눈금이 한두 개밖에 남지 않는다.
+     폭이 좁으면 선형 간격의 '깔끔한 수'로 바꿔 5개 안팎을 유지한다. */
+  if(hi/lo<4){
+    var raw=(hi-lo)/4, mag=Math.pow(10,Math.floor(Math.log10(raw))), nm=raw/mag;
+    var step=mag*(nm<=1?1:nm<=2?2:nm<=2.5?2.5:nm<=5?5:10);
+    var ticks=[], v=Math.ceil(lo/step)*step;
+    for(; v<=hi+1e-9 && ticks.length<9; v+=step) ticks.push(Math.round(v*1e6)/1e6);
+    if(ticks.length>=2) return ticks;
+  }
   var out=[], e=Math.floor(Math.log10(lo));
   for(; Math.pow(10,e)<=hi*10; e++){
     [1,2,5].forEach(function(m){
@@ -329,6 +443,23 @@ function niceLogTicks(lo,hi){
   if(out.length>7){ out=out.filter(function(v){
     var m=v/Math.pow(10,Math.floor(Math.log10(v)));
     return Math.abs(m-1)<1e-9; }); }
+  return out;
+}
+
+/* 구간이 3년 이상이면 연도, 그보다 짧으면 월 눈금을 쓴다 */
+function axisTicks(dates){
+  var n=dates.length, yrs={}, i;
+  for(i=0;i<n;i++) yrs[dates[i].slice(0,4)]=1;
+  var span=Object.keys(yrs).length, out=[], seen={};
+  for(i=0;i<n;i++){
+    var key = span>=3 ? dates[i].slice(0,4) : dates[i].slice(0,7);
+    if(seen[key]) continue;
+    seen[key]=1;
+    var lab = span>=3 ? key
+            : span===1 ? (+dates[i].slice(5,7))+'월'
+            : dates[i].slice(2,4)+'.'+(+dates[i].slice(5,7));
+    out.push([i,lab]);
+  }
   return out;
 }
 
@@ -355,9 +486,7 @@ function drawCurve(r, m, bh){
     svg.appendChild(el('line',{x1:PADL,x2:W-PADR,y1:y,y2:y,'class':'gridline'}));
     svg.appendChild(el('text',{x:PADL-8,y:y+3,'class':'axis-l','text-anchor':'end'},money(v)));
   });
-  // 연도 눈금
-  var seenY={}, ticks=[];
-  for(i=0;i<n;i++){ var y4=r.dates[i].slice(0,4); if(!seenY[y4]){ seenY[y4]=1; ticks.push([i,y4]); } }
+  var ticks=axisTicks(r.dates);
   var stepY=Math.ceil(ticks.length/8);
   ticks.forEach(function(t,k){
     if(k%stepY) return;
@@ -505,7 +634,7 @@ function run(){
   if(!hist) return;
   var v=readForm();
   if(v.end<v.start){ v.end=v.start; $('c-end').value=v.end; }
-  var cfg={ start:v.start+'-01-01', end:v.end+'-12-31', seed:v.seed,
+  var cfg={ start:v.start, end:v.end, seed:v.seed,
             params:toParams(v), modes:cfgModes };
   var r=B.backtest(hist,cfg);
   if(!r){ $('loading').textContent='선택한 구간에 데이터가 없습니다.'; return; }
@@ -523,7 +652,8 @@ function run(){
   $('sum-meta').textContent=r.dates[0]+' ~ '+r.dates[r.dates.length-1]+' · '+
     m.years.toFixed(1)+'년 · 모드 비중 바닥 '+(md.bottom/tot*100).toFixed(0)+
     '% 중간 '+(md.middle/tot*100).toFixed(0)+'% 천장 '+(md.top/tot*100).toFixed(0)+'%';
-  $('nav-range').textContent=v.start+'–'+v.end;
+  $('nav-range').textContent=rangeLabel(v);
+  markPreset(v); linkNote(v); writeQuery(v);
   $('ctl-state').textContent=isDefault(v)?'방법론 v1.2 확정 파라미터'
     : '확정 파라미터에서 변경됨';
   $('ctl-state').className='meta'+(isDefault(v)?'':' dirty');
@@ -532,10 +662,12 @@ function run(){
   drawAnnual(B.annual(r));
 
   var tb=$('roll-body'); tb.innerHTML='';
+  var y0=+v.start.slice(0,4)+(v.start.slice(5)==='01-01'?0:1);
+  var y1=+v.end.slice(0,4)-(v.end.slice(5)==='12-31'?0:1);
   [5,10].forEach(function(win){
-    var rr=B.rolling(hist,win,{ seed:v.seed, params:cfg.params, modes:cfgModes,
-      start:v.start+'-01-01', end:v.end+'-12-31' });
-    rr=rr.filter(function(x){ return x.start>=v.start && x.start+win-1<=v.end; });
+    var rr=(y1>=y0) ? B.rolling(hist,win,{ seed:v.seed, params:cfg.params, modes:cfgModes,
+      start:y0+'-01-01', end:y1+'-12-31' }) : [];
+    rr=rr.filter(function(x){ return x.start>=y0 && x.start+win-1<=y1; });
     if(!rr.length){ tb.insertAdjacentHTML('beforeend',
       '<tr><td>'+win+'년</td><td class="n">0</td><td colspan="5" class="n">구간이 부족합니다</td></tr>');
       return; }
@@ -554,7 +686,24 @@ function run(){
 var t=null;
 function schedule(){ if(t) clearTimeout(t); t=setTimeout(run,180); }
 IDS.forEach(function(id){ $(id).addEventListener('input',schedule); });
-$('btn-reset').addEventListener('click',function(){ writeForm(DEF); run(); });
+$('btn-reset').addEventListener('click',function(){
+  var b=bookSeed();
+  writeForm(DEF);
+  if(DATA_END && DEF.end>DATA_END) $('c-end').value=DATA_END;
+  if(b!=null) $('c-seed').value=b;          // 주문서와의 연결은 유지한다
+  run();
+});
+
+PRESETS.forEach(function(p){
+  var b=document.createElement('button');
+  b.type='button'; b.textContent=p[1];
+  b.setAttribute('data-k',p[0]); b.setAttribute('aria-pressed','false');
+  b.addEventListener('click',function(){
+    var r=presetRange(p[0]); if(!r) return;
+    $('c-start').value=r[0]; $('c-end').value=r[1]; run();
+  });
+  $('presets').appendChild(b);
+});
 
 writeForm(DEF);
 hookCrosshair();
@@ -562,8 +711,16 @@ fetch('data/history.json',{cache:'force-cache'})
   .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
   .then(function(d){
     hist=d; cfgModes=B.assignModes(hist);
-    var last=+hist.dates[hist.dates.length-1].slice(0,4);
-    $('c-end').max=last; $('c-start').max=last;
+    DATA_END=hist.dates[hist.dates.length-1];
+    ['c-start','c-end'].forEach(function(id){ $(id).min=MIN_START; $(id).max=DATA_END; });
+    if(DEF.end>DATA_END) $('c-end').value=DATA_END;
+
+    // 주문서 시드 → 쿼리스트링 순으로 물려받는다
+    var book=bookSeed(), q=readQuery();
+    if(book!=null) $('c-seed').value=book;
+    if(+q.seed>0) $('c-seed').value=+q.seed;
+    if(ISO.test(q.start||'')) $('c-start').value=q.start;
+    if(ISO.test(q.end||'')) $('c-end').value=q.end;
     run();
   })
   .catch(function(){

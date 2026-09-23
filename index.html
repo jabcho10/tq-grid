@@ -34,7 +34,7 @@ img{max-width:100%}
       <a href="#positions">보유 포지션</a>
       <a href="#mode">매매 모드</a>
       <a href="#weights">티어 비중</a>
-      <a href="backtest.html">백테스트</a>
+      <a href="backtest.html" id="nav-bt">백테스트</a>
     </span>
     <button class="btn-primary" id="btn-copy" type="button">주문 복사</button>
   </div>
@@ -435,6 +435,8 @@ function render(){
   $('mode').className='tile tile-compact '+(c.mode?SURFACE[c.mode]:'tile-dark-3');
   $('weights').className='tile '+(c.mode==='middle'?'tile-light':'tile-parchment');
   $('nav-date').textContent=state.orderDate;
+  // 백테스트로 넘어갈 때 지금 시드를 들고 간다
+  $('nav-bt').href='backtest.html?seed='+state.seed;
 
   if(c.mode){
     $('mode-word').textContent=P[c.mode].ko;
