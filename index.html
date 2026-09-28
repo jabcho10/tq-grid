@@ -17,7 +17,7 @@ img{max-width:100%}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Noto+Sans+KR:wght@300;400;600;700&display=swap">
-<link rel="stylesheet" href="assets/site.css?v=5">
+<link rel="stylesheet" href="assets/site.css?v=6">
 </head>
 <body>
 <div class="navstack">
@@ -91,7 +91,7 @@ img{max-width:100%}
     <div class="sec-head">
       <h2>보유 포지션</h2>
       <span class="meta" id="pos-meta"></span>
-      <span class="meta">표의 값을 눌러 바로 고칠 수 있습니다</span>
+      <span class="meta">수정을 눌러 티어·체결 내역을 고칩니다</span>
     </div>
     <div class="tblwrap">
       <table class="postable">
@@ -519,6 +519,7 @@ function compute(){
 /* ── 렌더 ────────────────────────────────────────────────── */
 var $=function(id){ return document.getElementById(id); };
 var modeTouched=false, tierTouched=false;
+var editId=null, focusEdit=false;      // '수정'을 누른 행과 첫 칸 포커스
 
 function render(){
   var c=compute();
@@ -566,32 +567,34 @@ function render(){
   $('order-meta').textContent =
     TNAME[state.ticker]+' · '+state.orderDate+' · 주문 '+live+'건';
 
-  /* 포지션 — 고치는 중이던 칸은 다시 그린 뒤에도 그대로 머무른다 */
-  var tb=$('pos-body'), act=document.activeElement,
-      keepF=(act&&act.getAttribute)?act.getAttribute('data-edit'):null,
-      keepId=keepF?act.getAttribute('data-id'):null;
-  tb.innerHTML='';
+  /* 포지션 — 평소에는 읽기만 하고, '수정'을 누른 한 행만 입력 칸으로 바뀐다 */
+  var tb=$('pos-body'); tb.innerHTML='';
+  if(editId && !c.list.some(function(it){ return it.p.id===editId; })) editId=null;
   c.list.forEach(function(it){
-    var p=it.p, mv=(state.prevClose-p.price)*p.qty;
+    var p=it.p, on=(p.id===editId), mv=(state.prevClose-p.price)*p.qty;
     tb.insertAdjacentHTML('beforeend',
-      '<tr>'+
-      '<td data-l="티어">'+cellTier(p)+'</td>'+
-      '<td data-l="진입 모드">'+cellMode(p)+'</td>'+
-      '<td data-l="매수가">'+cellNum(p,'price',p.price,'0.01','0','decimal')+'</td>'+
-      '<td data-l="수량">'+cellNum(p,'qty',p.qty,'1','1','numeric')+'</td>'+
-      '<td data-l="체결일">'+cellDate(p)+'</td>'+
+      '<tr'+(on?' class="row-edit"':'')+'>'+
+      '<td data-l="티어">'+(on?cellTier(p):'<span class="tierlabel">'+p.tier+'티어</span>')+'</td>'+
+      '<td data-l="진입 모드">'+(on?cellMode(p):P[p.mode].ko)+'</td>'+
+      '<td data-l="매수가"'+(on?'':' class="n"')+'>'+
+        (on?cellNum(p,'price',p.price,'0.01','0','decimal'):usd(p.price))+'</td>'+
+      '<td data-l="수량"'+(on?'':' class="n"')+'>'+
+        (on?cellNum(p,'qty',p.qty,'1','1','numeric'):qtyf(p.qty)+'주')+'</td>'+
+      '<td data-l="체결일"'+(on?'':' class="n"')+'>'+(on?cellDate(p):p.date||'—')+'</td>'+
       '<td data-l="익절가" class="n">'+usd(it.tp)+'</td>'+
       '<td data-l="경과" class="n'+(it.due?' due-mark':'')+'">'+
         (it.due?'MOC 당일':('D+'+it.n+' / '+it.mocN))+'</td>'+
       '<td data-l="평가손익" class="n">'+(mv>=0?'+':'−')+usd(Math.abs(mv))+'</td>'+
-      '<td class="act"><button class="link-btn" type="button" data-del="'+esc(p.id)+'">삭제</button></td>'+
+      '<td class="act">'+(on
+        ? '<button class="link-btn strong" type="button" data-save="'+esc(p.id)+'">저장</button>'+
+          '<button class="link-btn" type="button" data-cancel="1">취소</button>'
+        : '<button class="link-btn" type="button" data-edit-row="'+esc(p.id)+'">수정</button>'+
+          '<button class="link-btn" type="button" data-del="'+esc(p.id)+'">삭제</button>')+'</td>'+
       '</tr>');
   });
-  if(keepId){
-    var cells=tb.querySelectorAll('[data-edit]'), ci;
-    for(ci=0;ci<cells.length;ci++)
-      if(cells[ci].getAttribute('data-id')===keepId &&
-         cells[ci].getAttribute('data-edit')===keepF){ cells[ci].focus(); break; }
+  if(editId){                       // 수정에 막 들어왔다면 첫 칸에 커서를 둔다
+    var first=tb.querySelectorAll('[data-edit]')[0];
+    if(first && focusEdit){ first.focus(); focusEdit=false; }
   }
   $('pos-empty').hidden = c.list.length>0;
   $('pos-meta').textContent = c.list.length+' / '+MAX_TIER+'티어'+(state.seeded?' · 예시 데이터':'');
@@ -732,45 +735,67 @@ bind('f-seed','seed',true);
 $('a-mode').addEventListener('change',function(){ modeTouched=true; });
 $('a-tier').addEventListener('change',function(){ tierTouched=true; });
 
-/* 표 안의 수정 — 값이 규칙에 맞지 않으면 손대지 않고 되돌린다. */
-$('pos-body').addEventListener('change',function(e){
-  var el=e.target, f=el.getAttribute&&el.getAttribute('data-edit');
-  if(!f) return;
-  var id=el.getAttribute('data-id'), p=null, v=el.value, msg=null, x;
+/* 표 안의 수정 — '수정'을 눌러 연 행에서만 고치고, '저장'을 눌러야 반영된다.
+   규칙에 어긋나면 아무것도 바꾸지 않고 수정 상태로 남겨 다시 고치게 한다. */
+function readRow(id){
+  var tb=$('pos-body'), cells=tb.querySelectorAll('[data-edit]'), v={}, i;
+  for(i=0;i<cells.length;i++)
+    if(cells[i].getAttribute('data-id')===id)
+      v[cells[i].getAttribute('data-edit')]=cells[i].value;
+  return v;
+}
+function commitRow(id){
+  var p=null, v=readRow(id), tier, price, qty;
   state.positions.forEach(function(q){ if(q.id===id) p=q; });
-  if(!p) return;
+  if(!p) return true;
 
-  if(f==='tier'){
-    x=Math.floor(+v);
-    if(!(x>=1&&x<=MAX_TIER)) msg='티어는 1~7 사이입니다';
-    else if(state.positions.some(function(q){ return q!==p && q.tier===x; }))
-      msg=x+'티어는 이미 보유 중입니다';
-    else p.tier=x;
-  } else if(f==='mode'){
-    if(!P[v]) msg='진입 모드를 확인하세요'; else p.mode=v;
-  } else if(f==='price'){
-    x=+v;
-    if(!(x>0)) msg='매수가는 0보다 커야 합니다'; else p.price=x;
-  } else if(f==='qty'){
-    x=Math.floor(+v);
-    if(!(x>0)) msg='수량은 1주 이상이어야 합니다'; else p.qty=x;
-  } else if(f==='date'){
-    if(!v||isNaN(parseISO(v).getTime())) msg='체결일을 확인하세요'; else p.date=v;
-  }
+  tier=Math.floor(+v.tier); price=+v.price; qty=Math.floor(+v.qty);
+  if(!(tier>=1&&tier<=MAX_TIER)){ toast('티어는 1~7 사이입니다'); return false; }
+  if(state.positions.some(function(q){ return q!==p && q.tier===tier; })){
+    toast(tier+'티어는 이미 보유 중입니다'); return false; }
+  if(!P[v.mode]){ toast('진입 모드를 확인하세요'); return false; }
+  if(!(price>0)){ toast('매수가는 0보다 커야 합니다'); return false; }
+  if(!(qty>0)){ toast('수량은 1주 이상이어야 합니다'); return false; }
+  if(!v.date||isNaN(parseISO(v.date).getTime())){ toast('체결일을 확인하세요'); return false; }
 
-  if(msg){ toast(msg+' — 되돌렸습니다'); render(); return; }
+  p.tier=tier; p.mode=v.mode; p.price=price; p.qty=qty; p.date=v.date;
   state.seeded=false;                        // 손을 댔으면 더는 예시가 아니다
   state.positions.sort(function(a,b){ return a.tier-b.tier; });
   tierTouched=false;
-  save(); render();
-});
+  return true;
+}
 
 $('pos-body').addEventListener('click',function(e){
-  var b=e.target.closest('[data-del]'); if(!b) return;
-  var id=b.getAttribute('data-del');
-  state.positions=state.positions.filter(function(p){ return p.id!==id; });
-  tierTouched=false;                        // 비워진 티어를 다음 입력 기본값으로
-  save(); render();
+  var t=e.target, b;
+
+  if((b=t.closest('[data-edit-row]'))){        // 수정 — 그 행만 연다
+    if(editId && editId!==b.getAttribute('data-edit-row') && !commitRow(editId)) return;
+    editId=b.getAttribute('data-edit-row'); focusEdit=true; render(); return;
+  }
+  if((b=t.closest('[data-save]'))){            // 저장 — 검사를 통과해야 닫힌다
+    if(!commitRow(b.getAttribute('data-save'))){ render(); return; }
+    editId=null; save(); render(); toast('수정했습니다'); return;
+  }
+  if(t.closest('[data-cancel]')){              // 취소 — 고치던 값을 버린다
+    editId=null; render(); return;
+  }
+  if((b=t.closest('[data-del]'))){
+    var id=b.getAttribute('data-del');
+    if(editId===id) editId=null;
+    state.positions=state.positions.filter(function(p){ return p.id!==id; });
+    tierTouched=false;                         // 비워진 티어를 다음 입력 기본값으로
+    save(); render();
+  }
+});
+
+/* 수정 중 Enter 는 저장, Esc 는 취소 */
+$('pos-body').addEventListener('keydown',function(e){
+  if(!editId || !e.target.getAttribute || !e.target.getAttribute('data-edit')) return;
+  if(e.key==='Enter'){
+    e.preventDefault();
+    if(commitRow(editId)){ editId=null; save(); render(); toast('수정했습니다'); }
+    else render();
+  } else if(e.key==='Escape'){ e.preventDefault(); editId=null; render(); }
 });
 
 $('btn-add').addEventListener('click',function(){

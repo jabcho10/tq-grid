@@ -193,15 +193,17 @@ h1,h2,h3,p,dl,dd{margin:0}
 .ocard.halt .price{font-family:var(--text);font-size:28px;letter-spacing:-.374px;color:var(--ink-muted-48)}
 
 /* ── inputs (search-input grammar) ────────────────────────── */
-.formgrid{display:grid;gap:var(--s-lg);grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.formgrid{display:grid;gap:var(--s-md) var(--s-lg);
+  grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 .field{display:flex;flex-direction:column;gap:var(--s-xs);min-width:0}
-.field label{font-size:14px;font-weight:400;letter-spacing:-.224px;color:var(--ink-muted-80)}
+.field label{font-size:12px;font-weight:400;letter-spacing:-.12px;color:var(--ink-muted-80)}
 .field input,.field select{
-  width:100%;height:44px;background:var(--canvas);color:var(--ink);
+  width:100%;min-width:0;height:40px;background:var(--canvas);color:var(--ink);
   border:1px solid var(--hairline-soft);border-radius:var(--r-pill);
-  padding:12px 20px;font-family:var(--text);font-size:17px;font-weight:400;letter-spacing:-.374px;
+  padding:8px 16px;font-family:var(--text);font-size:15px;font-weight:400;letter-spacing:-.24px;
   font-variant-numeric:tabular-nums}
-.field select{padding-right:14px}
+.field select{padding-right:10px}
+.field input[type=date]{padding-inline:12px}
 .field input:focus,.field select:focus{outline:2px solid var(--primary-focus);outline-offset:1px}
 
 /* ── tables ───────────────────────────────────────────────── */
@@ -216,14 +218,18 @@ th:last-child,td:last-child{padding-right:0}
 tbody tr:last-child td{border-bottom:1px solid var(--hairline)}
 td.n{font-variant-numeric:tabular-nums}
 
-/* 표 안에서 바로 고치는 칸 — 평소엔 글자처럼 앉아 있다가 손대면 테두리가 선다 */
+td .tierlabel{font-weight:600}
+.postable td.act{display:flex;gap:var(--s-md);justify-content:flex-end}
+
+/* 수정 중인 행 — '수정'을 눌렀을 때만 입력 칸이 나타난다 */
+.row-edit td{background:var(--surface-pearl)}
+.row-edit .link-btn.strong{font-weight:600}
 .cell-in{
-  font:inherit;letter-spacing:inherit;color:var(--ink);background:transparent;
+  font:inherit;letter-spacing:inherit;color:var(--ink);background:var(--canvas);
   font-variant-numeric:tabular-nums;text-align:right;
-  border:1px solid transparent;border-radius:var(--r-xs);
+  border:1px solid var(--hairline);border-radius:var(--r-xs);
   padding:3px 6px;margin:-3px -6px;max-width:100%}
-.cell-in:hover{border-color:var(--hairline)}
-.cell-in:focus{outline:2px solid var(--primary-focus);outline-offset:0;background:var(--canvas)}
+.cell-in:focus{outline:2px solid var(--primary-focus);outline-offset:0}
 select.cell-in{text-align:left;font-weight:600;padding-right:2px}
 select.cell-in[data-edit="mode"]{font-weight:400}
 input.cell-in[type=number]{width:9ch;-moz-appearance:textfield}
@@ -236,26 +242,52 @@ input.cell-in[type=date]{text-align:left;font-variant-numeric:tabular-nums}
 .empty{padding-block:var(--s-xxl);text-align:center;color:var(--ink-muted-48);
   font-size:17px;letter-spacing:-.374px}
 
-/* ── 모바일: 포지션 표를 카드로 전환 ─────────────────────── */
-@media (max-width:640px){
-  .postable thead,.cardtable thead{display:none}
-  .postable tbody tr,.cardtable tbody tr{
+/* 태블릿 폭: 포지션표가 9열이라 여백부터 줄여 가로 스크롤을 막는다 */
+@media (max-width:1000px){
+  .postable th,.postable td{padding-inline:var(--s-xs)}
+  .postable td.act{gap:var(--s-sm)}
+}
+
+/* ── 포지션표를 카드로 전환 ───────────────────────────────
+   9열에 수정·삭제까지 붙어 롤링 검증표(.cardtable)보다 일찍 접는다.
+   수정 중에는 입력 칸이 글자보다 넓어 기준을 800px 로 잡았다. */
+@media (max-width:800px){
+  .postable thead{display:none}
+  .postable tbody tr{
     display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
     gap:var(--s-sm) var(--s-md);
     border:1px solid var(--hairline);border-radius:var(--r-lg);
     padding:var(--s-md);margin-bottom:var(--s-sm)}
-  .postable td,.cardtable td{display:flex;flex-direction:column;gap:2px;
+  .postable td{display:flex;flex-direction:column;gap:2px;
     border:none;padding:0;text-align:left;white-space:nowrap;min-width:0}
-  .postable td::before,.cardtable td::before{content:attr(data-l);
+  .postable td::before{content:attr(data-l);
     font-size:12px;font-weight:400;line-height:1.3;letter-spacing:-.12px;
     color:var(--ink-muted-48)}
-  .postable td.act{grid-column:1/-1;flex-direction:row;justify-content:flex-end}
+  .postable td.act{grid-column:1/-1;flex-direction:row;justify-content:flex-end;gap:var(--s-md)}
   .postable td.act::before{content:none}
-  .postable tbody tr:last-child td,.cardtable tbody tr:last-child td{border:none}
+  .postable tbody tr:last-child td{border:none}
   .postable .link-btn{min-height:44px;display:inline-flex;align-items:center;
     padding-inline:var(--s-sm)}
   .postable .cell-in{width:100%;max-width:none;text-align:left;min-height:34px;margin-inline:-6px}
   .postable input.cell-in[type=number]{width:100%}
+  .row-edit td{background:transparent}
+  .postable tbody tr.row-edit{border-color:var(--ink);background:var(--surface-pearl)}
+}
+
+/* ── 모바일: 롤링 검증표를 카드로 전환 ───────────────────── */
+@media (max-width:640px){
+  .cardtable thead{display:none}
+  .cardtable tbody tr{
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:var(--s-sm) var(--s-md);
+    border:1px solid var(--hairline);border-radius:var(--r-lg);
+    padding:var(--s-md);margin-bottom:var(--s-sm)}
+  .cardtable td{display:flex;flex-direction:column;gap:2px;
+    border:none;padding:0;text-align:left;white-space:nowrap;min-width:0}
+  .cardtable td::before{content:attr(data-l);
+    font-size:12px;font-weight:400;line-height:1.3;letter-spacing:-.12px;
+    color:var(--ink-muted-48)}
+  .cardtable tbody tr:last-child td{border:none}
   /* 티어 비중표: 좁은 화면에서는 '티어' 글자를 접어 7열을 다 보인다 */
   .wtable th,.wtable td{padding:var(--s-xs) var(--s-xs);font-size:13px}
   .wtable th:first-child,.wtable td:first-child{padding-left:0}
