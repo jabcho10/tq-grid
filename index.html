@@ -17,7 +17,7 @@ img{max-width:100%}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Noto+Sans+KR:wght@300;400;600;700&display=swap">
-<link rel="stylesheet" href="assets/site.css?v=4">
+<link rel="stylesheet" href="assets/site.css?v=5">
 </head>
 <body>
 <div class="navstack">
@@ -91,11 +91,12 @@ img{max-width:100%}
     <div class="sec-head">
       <h2>보유 포지션</h2>
       <span class="meta" id="pos-meta"></span>
+      <span class="meta">표의 값을 눌러 바로 고칠 수 있습니다</span>
     </div>
     <div class="tblwrap">
       <table class="postable">
         <thead><tr>
-          <th>티어</th><th>진입 모드</th><th>매수가</th><th>수량</th>
+          <th>티어</th><th>진입 모드</th><th>매수가</th><th>수량</th><th>체결일</th>
           <th>익절가</th><th>경과</th><th>평가손익</th><th></th>
         </tr></thead>
         <tbody id="pos-body"></tbody>
@@ -108,6 +109,10 @@ img{max-width:100%}
       <span class="meta">LOC가 체결되면 실제 체결가로 입력하세요</span>
     </div>
     <div class="formgrid">
+      <div class="field">
+        <label for="a-tier">티어</label>
+        <select id="a-tier"></select>
+      </div>
       <div class="field">
         <label for="a-mode">진입 모드</label>
         <select id="a-mode">
@@ -307,6 +312,34 @@ function liveBook(){
            positions:state.positions, seeded:state.seeded };
 }
 
+/* 티어는 직접 입력할 수 있으므로 '보유 개수+1'이 아니라 실제로 비어 있는
+   자리를 기준으로 삼는다. 1~7티어를 순서대로 채우면 결과는 종전과 같다. */
+var idSeq=0;
+function newId(){ return 'p'+Date.now().toString(36)+'-'+(++idSeq).toString(36); }
+function heldTiers(){
+  var s={}; state.positions.forEach(function(p){ s[p.tier]=true; }); return s;
+}
+function nextTier(){
+  var s=heldTiers(), t;
+  for(t=1;t<=MAX_TIER;t++) if(!s[t]) return t;
+  return null;                                   // 7티어 만재
+}
+/* 저장본·수기 입력이 섞여도 티어는 1~7 안에서 서로 겹치지 않게 정돈한다. */
+function normalizePositions(list){
+  var used={}, seen={}, out=[];
+  (list||[]).forEach(function(p){
+    if(!p||typeof p!=='object') return;
+    if(!p.id||seen[p.id]) p.id=newId();       // 행을 하나씩 다루려면 id가 겹치면 안 된다
+    seen[p.id]=true;
+    var t=Math.floor(+p.tier);
+    if(!(t>=1&&t<=MAX_TIER)||used[t]){ t=0;
+      for(var i=1;i<=MAX_TIER;i++) if(!used[i]){ t=i; break; } }
+    if(!t) return;                               // 자리가 없으면 버린다
+    used[t]=true; p.tier=t; out.push(p);
+  });
+  return out.sort(function(a,b){ return a.tier-b.tier; });
+}
+
 /* ── 저장 ────────────────────────────────────────────────── */
 var db=null, saveTimer=null, inflight=false, again=false;
 function persistable(){
@@ -333,7 +366,7 @@ function adopt(d){
     var b=books[k]||{};
     var book={ prevClose:(b.prevClose!=null?+b.prevClose:0),
                seed:(b.seed!=null?+b.seed:10000),
-               positions:Array.isArray(b.positions)?b.positions:[],
+               positions:normalizePositions(b.positions),
                seeded:false };
     if(k===tk){
       state.prevClose=book.prevClose; state.seed=book.seed;
@@ -446,10 +479,9 @@ function compute(){
     why:'매수가 '+usd(it.p.price)+' 대비 '+pct(tpRateOf(it.p.mode,it.p.tier))+
         ' · MOC까지 <em>D−'+(it.mocN-it.n)+'</em> · 종가가 지정가 이상이면 체결됩니다.' }); });
 
-  var buy=null, held=state.positions.length;
+  var buy=null, tier=nextTier();
   if(mode){
-    var tier=held+1;
-    if(tier>MAX_TIER){
+    if(tier==null){
       buy={ k:'halt', head:'신규 매수 없음',
         why:'7티어를 모두 보유 중입니다. 익절이나 MOC로 티어가 비워질 때까지 신규 매수를 내지 않습니다.' };
     } else if(mode==='top' && list.some(function(it){return it.due;})){
@@ -486,7 +518,7 @@ function compute(){
 
 /* ── 렌더 ────────────────────────────────────────────────── */
 var $=function(id){ return document.getElementById(id); };
-var modeTouched=false;
+var modeTouched=false, tierTouched=false;
 
 function render(){
   var c=compute();
@@ -534,16 +566,20 @@ function render(){
   $('order-meta').textContent =
     TNAME[state.ticker]+' · '+state.orderDate+' · 주문 '+live+'건';
 
-  /* 포지션 */
-  var tb=$('pos-body'); tb.innerHTML='';
+  /* 포지션 — 고치는 중이던 칸은 다시 그린 뒤에도 그대로 머무른다 */
+  var tb=$('pos-body'), act=document.activeElement,
+      keepF=(act&&act.getAttribute)?act.getAttribute('data-edit'):null,
+      keepId=keepF?act.getAttribute('data-id'):null;
+  tb.innerHTML='';
   c.list.forEach(function(it){
     var p=it.p, mv=(state.prevClose-p.price)*p.qty;
     tb.insertAdjacentHTML('beforeend',
       '<tr>'+
-      '<td data-l="티어"><span class="tierlabel">'+p.tier+'티어</span></td>'+
-      '<td data-l="진입 모드">'+P[p.mode].ko+'</td>'+
-      '<td data-l="매수가" class="n">'+usd(p.price)+'</td>'+
-      '<td data-l="수량" class="n">'+qtyf(p.qty)+'주</td>'+
+      '<td data-l="티어">'+cellTier(p)+'</td>'+
+      '<td data-l="진입 모드">'+cellMode(p)+'</td>'+
+      '<td data-l="매수가">'+cellNum(p,'price',p.price,'0.01','0','decimal')+'</td>'+
+      '<td data-l="수량">'+cellNum(p,'qty',p.qty,'1','1','numeric')+'</td>'+
+      '<td data-l="체결일">'+cellDate(p)+'</td>'+
       '<td data-l="익절가" class="n">'+usd(it.tp)+'</td>'+
       '<td data-l="경과" class="n'+(it.due?' due-mark':'')+'">'+
         (it.due?'MOC 당일':('D+'+it.n+' / '+it.mocN))+'</td>'+
@@ -551,11 +587,62 @@ function render(){
       '<td class="act"><button class="link-btn" type="button" data-del="'+esc(p.id)+'">삭제</button></td>'+
       '</tr>');
   });
+  if(keepId){
+    var cells=tb.querySelectorAll('[data-edit]'), ci;
+    for(ci=0;ci<cells.length;ci++)
+      if(cells[ci].getAttribute('data-id')===keepId &&
+         cells[ci].getAttribute('data-edit')===keepF){ cells[ci].focus(); break; }
+  }
   $('pos-empty').hidden = c.list.length>0;
   $('pos-meta').textContent = c.list.length+' / '+MAX_TIER+'티어'+(state.seeded?' · 예시 데이터':'');
   if(!modeTouched && c.mode) $('a-mode').value=c.mode;
+  syncTierOptions();
 
   window.__c=c;
+}
+/* ── 표 안에서 바로 고치기 ──────────────────────────────────
+   보유 포지션의 티어·모드·매수가·수량·체결일을 그 자리에서 고친다.
+   값은 change(포커스를 떠나거나 Enter) 시점에만 반영해 타이핑 중에
+   표가 다시 그려지지 않게 한다. */
+function editAttr(p,f){
+  return ' class="cell-in" data-edit="'+f+'" data-id="'+esc(p.id)+'"';
+}
+function cellTier(p){
+  var used={}, h='', t;
+  state.positions.forEach(function(q){ if(q.id!==p.id) used[q.tier]=true; });
+  for(t=1;t<=MAX_TIER;t++)
+    h+='<option value="'+t+'"'+(used[t]?' disabled':'')+(t===p.tier?' selected':'')+'>'+
+       t+'티어'+(used[t]?' · 보유 중':'')+'</option>';
+  return '<select'+editAttr(p,'tier')+' aria-label="티어">'+h+'</select>';
+}
+function cellMode(p){
+  var h='';
+  ['bottom','middle','top'].forEach(function(m){
+    h+='<option value="'+m+'"'+(m===p.mode?' selected':'')+'>'+P[m].ko+'</option>'; });
+  return '<select'+editAttr(p,'mode')+' aria-label="진입 모드">'+h+'</select>';
+}
+function cellNum(p,f,v,step,min,im){
+  return '<input type="number"'+editAttr(p,f)+' step="'+step+'" min="'+min+'"'+
+         ' inputmode="'+im+'" value="'+esc(v)+'" aria-label="'+(f==='price'?'매수가':'수량')+'">';
+}
+function cellDate(p){
+  return '<input type="date"'+editAttr(p,'date')+' value="'+esc(p.date||'')+'" aria-label="체결일">';
+}
+
+/* 체결 기록의 티어 선택 — 보유 중인 티어는 고를 수 없고, 손대기 전에는
+   다음 매수 티어를 미리 잡아 둔다. */
+function syncTierOptions(){
+  /* 예시 장부는 첫 입력에 통째로 비워지므로 자리를 막지 않고 1티어부터 연다 */
+  var sel=$('a-tier'), held=state.seeded?{}:heldTiers(),
+      dflt=state.seeded?1:nextTier(),
+      want=tierTouched?Math.floor(+sel.value):dflt, h='', t;
+  if(!(want>=1&&want<=MAX_TIER)||held[want]){ want=dflt; tierTouched=false; }
+  for(t=1;t<=MAX_TIER;t++)
+    h+='<option value="'+t+'"'+(held[t]?' disabled':'')+(t===want?' selected':'')+'>'+
+       t+'티어'+(held[t]?' · 보유 중':'')+'</option>';
+  sel.innerHTML=h;
+  sel.value=(want==null?'':String(want));
+  sel.disabled=(want==null);
 }
 function f(k,v,dark){
   return '<div><dt class="'+(dark?'on-dark-muted':'muted')+'">'+esc(k)+
@@ -566,7 +653,7 @@ function renderWeights(c){
   for(i=1;i<=MAX_TIER;i++) head+='<th>'+i+'<span class="tierword">티어</span></th>';
   $('weight-head').innerHTML=head;
 
-  var nt=state.positions.length+1, body='';
+  var nt=nextTier()||MAX_TIER+1, body='';
   ['bottom','middle','top'].forEach(function(m){
     var on=(m===c.mode);
     body+='<tr'+(on?' class="wrow-on"':'')+'><td>'+P[m].ko+'</td>';
@@ -620,7 +707,7 @@ function activate(tk){
   state.ticker=tk; P=PARAMS[tk];
   state.prevClose=b.prevClose; state.seed=b.seed;
   state.positions=b.positions; state.seeded=!!b.seeded;
-  modeTouched=false;
+  modeTouched=false; tierTouched=false;
   markTicker(); syncInputs(); $('a-date').value=state.orderDate;
   save(); render(); feedMeta();
   toast(TNAME[tk]+' 장부로 바꿨습니다');
@@ -643,24 +730,62 @@ bind('f-date','orderDate',false); bind('f-prev','prevClose',true);
 bind('f-qqqd','qqqDate',false);   bind('f-qqq','qqqClose',true);
 bind('f-seed','seed',true);
 $('a-mode').addEventListener('change',function(){ modeTouched=true; });
+$('a-tier').addEventListener('change',function(){ tierTouched=true; });
+
+/* 표 안의 수정 — 값이 규칙에 맞지 않으면 손대지 않고 되돌린다. */
+$('pos-body').addEventListener('change',function(e){
+  var el=e.target, f=el.getAttribute&&el.getAttribute('data-edit');
+  if(!f) return;
+  var id=el.getAttribute('data-id'), p=null, v=el.value, msg=null, x;
+  state.positions.forEach(function(q){ if(q.id===id) p=q; });
+  if(!p) return;
+
+  if(f==='tier'){
+    x=Math.floor(+v);
+    if(!(x>=1&&x<=MAX_TIER)) msg='티어는 1~7 사이입니다';
+    else if(state.positions.some(function(q){ return q!==p && q.tier===x; }))
+      msg=x+'티어는 이미 보유 중입니다';
+    else p.tier=x;
+  } else if(f==='mode'){
+    if(!P[v]) msg='진입 모드를 확인하세요'; else p.mode=v;
+  } else if(f==='price'){
+    x=+v;
+    if(!(x>0)) msg='매수가는 0보다 커야 합니다'; else p.price=x;
+  } else if(f==='qty'){
+    x=Math.floor(+v);
+    if(!(x>0)) msg='수량은 1주 이상이어야 합니다'; else p.qty=x;
+  } else if(f==='date'){
+    if(!v||isNaN(parseISO(v).getTime())) msg='체결일을 확인하세요'; else p.date=v;
+  }
+
+  if(msg){ toast(msg+' — 되돌렸습니다'); render(); return; }
+  state.seeded=false;                        // 손을 댔으면 더는 예시가 아니다
+  state.positions.sort(function(a,b){ return a.tier-b.tier; });
+  tierTouched=false;
+  save(); render();
+});
 
 $('pos-body').addEventListener('click',function(e){
   var b=e.target.closest('[data-del]'); if(!b) return;
   var id=b.getAttribute('data-del');
   state.positions=state.positions.filter(function(p){ return p.id!==id; });
+  tierTouched=false;                        // 비워진 티어를 다음 입력 기본값으로
   save(); render();
 });
 
 $('btn-add').addEventListener('click',function(){
   var price=+$('a-price').value, q=Math.floor(+$('a-qty').value),
-      d=$('a-date').value, m=$('a-mode').value;
+      d=$('a-date').value, m=$('a-mode').value, tier=Math.floor(+$('a-tier').value);
   if(!(price>0)||!(q>0)||!d){ toast('체결가, 수량, 체결일을 모두 입력하세요'); return; }
+  if(state.seeded){ state.positions=[]; state.seeded=false; }   // 예시 장부는 첫 입력에 비운다
   if(state.positions.length>=MAX_TIER){ toast('이미 7티어를 모두 보유 중입니다'); return; }
-  if(state.seeded){ state.positions=[]; state.seeded=false; }
-  state.positions.push({ id:'p'+Date.now().toString(36), tier:state.positions.length+1,
+  if(!(tier>=1&&tier<=MAX_TIER)){ toast('티어를 선택하세요'); return; }
+  if(heldTiers()[tier]){ toast(tier+'티어는 이미 보유 중입니다'); return; }
+  state.positions.push({ id:newId(), tier:tier,
     mode:m, price:price, qty:q, date:d });
-  $('a-price').value=''; $('a-qty').value='';
-  save(); render(); toast('포지션을 추가했습니다');
+  state.positions.sort(function(a,b){ return a.tier-b.tier; });
+  $('a-price').value=''; $('a-qty').value=''; tierTouched=false;
+  save(); render(); toast(tier+'티어 포지션을 추가했습니다');
 });
 
 $('btn-copy').addEventListener('click',function(){

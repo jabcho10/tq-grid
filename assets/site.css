@@ -215,7 +215,23 @@ th:first-child,td:first-child{text-align:left;padding-left:0}
 th:last-child,td:last-child{padding-right:0}
 tbody tr:last-child td{border-bottom:1px solid var(--hairline)}
 td.n{font-variant-numeric:tabular-nums}
-td .tierlabel{font-weight:600}
+
+/* 표 안에서 바로 고치는 칸 — 평소엔 글자처럼 앉아 있다가 손대면 테두리가 선다 */
+.cell-in{
+  font:inherit;letter-spacing:inherit;color:var(--ink);background:transparent;
+  font-variant-numeric:tabular-nums;text-align:right;
+  border:1px solid transparent;border-radius:var(--r-xs);
+  padding:3px 6px;margin:-3px -6px;max-width:100%}
+.cell-in:hover{border-color:var(--hairline)}
+.cell-in:focus{outline:2px solid var(--primary-focus);outline-offset:0;background:var(--canvas)}
+select.cell-in{text-align:left;font-weight:600;padding-right:2px}
+select.cell-in[data-edit="mode"]{font-weight:400}
+input.cell-in[type=number]{width:9ch;-moz-appearance:textfield}
+input.cell-in[data-edit="qty"]{width:6ch}
+input.cell-in[type=number]::-webkit-outer-spin-button,
+input.cell-in[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+input.cell-in[type=date]{text-align:left;font-variant-numeric:tabular-nums}
+.postable td:has(.cell-in){padding-block:var(--s-xs)}
 .due-mark{font-weight:600}
 .empty{padding-block:var(--s-xxl);text-align:center;color:var(--ink-muted-48);
   font-size:17px;letter-spacing:-.374px}
@@ -238,6 +254,8 @@ td .tierlabel{font-weight:600}
   .postable tbody tr:last-child td,.cardtable tbody tr:last-child td{border:none}
   .postable .link-btn{min-height:44px;display:inline-flex;align-items:center;
     padding-inline:var(--s-sm)}
+  .postable .cell-in{width:100%;max-width:none;text-align:left;min-height:34px;margin-inline:-6px}
+  .postable input.cell-in[type=number]{width:100%}
   /* 티어 비중표: 좁은 화면에서는 '티어' 글자를 접어 7열을 다 보인다 */
   .wtable th,.wtable td{padding:var(--s-xs) var(--s-xs);font-size:13px}
   .wtable th:first-child,.wtable td:first-child{padding-left:0}
