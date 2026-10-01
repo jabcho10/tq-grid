@@ -102,6 +102,26 @@ details.tableview > summary::-webkit-details-marker{display:none}
 details.tableview > summary:focus-visible{outline:2px solid var(--primary-focus);
   outline-offset:2px;border-radius:var(--r-xs)}
 details.tableview[open] > summary{margin-bottom:var(--s-md)}
+/* 월별 히트맵 — 상승은 액센트 블루, 하락은 레드, 0 근처는 중립 회색.
+   셀마다 값을 적어 색만으로 부호를 읽게 하지 않는다. */
+.heatwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;position:relative}
+table.heat{border-collapse:separate;border-spacing:2px;width:100%;min-width:720px;
+  font-variant-numeric:tabular-nums;table-layout:fixed}
+table.heat th,table.heat td{border:none;padding:0;text-align:center;font-size:12px;
+  letter-spacing:-.12px;height:34px}
+table.heat thead th{font-weight:400;color:var(--ink-muted-48);height:24px}
+table.heat tbody th{font-weight:600;color:var(--ink-muted-80);text-align:left;
+  padding-left:2px;width:52px;position:sticky;left:0;background:var(--canvas-parchment);z-index:1}
+table.heat thead th:first-child{width:52px}
+table.heat td{border-radius:4px;color:var(--ink);cursor:default}
+table.heat td.na{background:transparent}
+table.heat td.yr{font-weight:600}
+table.heat th.gap,table.heat td.gap{width:6px;background:transparent}
+table.heat td.part{box-shadow:inset 0 0 0 1px rgba(0,0,0,.28)}
+table.heat td[data-ym]:hover,table.heat td[data-y]:hover{outline:2px solid var(--ink);outline-offset:-1px}
+.heatkey{display:inline-flex;align-items:center;gap:6px;margin-left:auto;
+  font-size:12px;letter-spacing:-.12px;color:var(--ink-muted-48);font-variant-numeric:tabular-nums}
+.heatkey i{display:inline-block;width:120px;height:8px;border-radius:4px}
 .loading{padding-block:var(--s-xxl);text-align:center;color:var(--ink-muted-48);
   font-size:17px;letter-spacing:-.374px}
 </style>
@@ -120,6 +140,7 @@ details.tableview[open] > summary{margin-bottom:var(--s-md)}
       <a href="#summary">성과</a>
       <a href="#curve">자산곡선</a>
       <a href="#annual">연도별</a>
+      <a href="#monthly">월별</a>
       <a href="#rolling">롤링 검증</a>
     </span>
     <a class="navswitch" href="index.html">← 주문서</a>
@@ -246,6 +267,21 @@ details.tableview[open] > summary{margin-bottom:var(--s-md)}
         </table>
       </div>
     </details>
+
+    <div class="figcap" id="monthly" style="margin-top:var(--s-xl)">
+      <h3>월별 수익률</h3>
+      <span class="note">직전 월말 대비 % · 테두리 칸은 일부 기간만 반영 · 연간은 월별을 곱한 값</span>
+      <span class="heatkey" id="heat-key"></span>
+    </div>
+    <div class="plotwrap">
+      <div class="heatwrap">
+        <table class="heat" aria-label="연도·월별 전략 수익률 히트맵">
+          <thead id="heat-head"></thead>
+          <tbody id="heat-body"></tbody>
+        </table>
+      </div>
+      <div class="tip" id="tip-heat"></div>
+    </div>
   </div>
 </section>
 
@@ -277,7 +313,7 @@ details.tableview[open] > summary{margin-bottom:var(--s-md)}
   </div>
 </footer>
 
-<script src="assets/backtest.js"></script>
+<script src="assets/backtest.js?v=2"></script>
 <script>
 (function(){
 'use strict';
@@ -287,7 +323,7 @@ var $ = function(id){ return document.getElementById(id); };
 /* 2010 구간은 2011년 첫 주 모드 판정용이라 백테스트 시작은 2011-01-01 이다 */
 var MIN_START = '2011-01-01';
 var DATA_END = null;                       // history.json 의 마지막 거래일
-var PRESETS = [['ytd','올해'],['1','최근 1년'],['3','최근 3년'],
+var PRESETS = [['mtd','이번 달'],['ytd','올해'],['1','최근 1년'],['3','최근 3년'],
                ['5','최근 5년'],['10','최근 10년'],['all','전체']];
 var BASE = { start: MIN_START, end: '2025-12-31', seed: 10000 };
 
@@ -363,6 +399,10 @@ function presetRange(key){
   var lo = floorStart();
   if (key === 'all') return [lo, DATA_END];
   if (key === 'ytd') return [DATA_END.slice(0,4) + '-01-01', DATA_END];
+  if (key === 'mtd'){
+    var m0 = DATA_END.slice(0,7) + '-01';
+    return [m0 < lo ? lo : m0, DATA_END];
+  }
   var s = backYears(DATA_END, +key);
   return [s < lo ? lo : s, DATA_END];
 }
@@ -511,8 +551,14 @@ function niceLogTicks(lo,hi){
 
 /* 구간이 3년 이상이면 연도, 그보다 짧으면 월 눈금을 쓴다 */
 function axisTicks(dates){
-  var n=dates.length, yrs={}, i;
-  for(i=0;i<n;i++) yrs[dates[i].slice(0,4)]=1;
+  var n=dates.length, yrs={}, mos={}, i;
+  for(i=0;i<n;i++){ yrs[dates[i].slice(0,4)]=1; mos[dates[i].slice(0,7)]=1; }
+  /* 두 달 이하면 월 눈금이 한두 개뿐이라 거래일 눈금을 쓴다 */
+  if(Object.keys(mos).length<=2){
+    var days=[];
+    for(i=0;i<n;i++) days.push([i,(+dates[i].slice(5,7))+'.'+(+dates[i].slice(8,10))]);
+    return days;
+  }
   var span=Object.keys(yrs).length, out=[], seen={};
   for(i=0;i<n;i++){
     var key = span>=3 ? dates[i].slice(0,4) : dates[i].slice(0,7);
@@ -688,6 +734,76 @@ function drawAnnual(rows){
   });
 }
 
+/* ── 월별 히트맵 ─────────────────────────────────────────── */
+var HEAT_NEU=[240,239,236], HEAT_UP=[0,102,204], HEAT_DN=[201,53,63];
+function heatColor(x, cap){
+  var t=Math.min(Math.abs(x)/cap,1), p=x>=0?HEAT_UP:HEAT_DN, c=[0,0,0];
+  for(var k=0;k<3;k++) c[k]=Math.round(HEAT_NEU[k]+(p[k]-HEAT_NEU[k])*t);
+  return 'background:rgb('+c.join(',')+')'+(t>0.55?';color:#fff':'');
+}
+function hv(x){ var s=(x*100).toFixed(1); return s==='-0.0'?'0.0':s.replace('-','−'); }
+function lastDay(iso){
+  return new Date(Date.UTC(+iso.slice(0,4), +iso.slice(5,7), 0)).getUTCDate();
+}
+function drawMonthly(rows, v){
+  var years={}, order=[], byYm={};
+  rows.forEach(function(o){
+    if(!years[o.year]){ years[o.year]={}; order.push(o.year); }
+    years[o.year][o.month]=o; byYm[o.ym]=o;
+  });
+  order.reverse();                                   // 최근 해가 위로
+  /* 색 눈금은 월 수익률 절댓값의 90백분위로 맞춘다 — 한두 달의 급등락이
+     나머지 칸을 전부 옅게 만들지 않게 한다 */
+  var abs=rows.map(function(o){ return Math.abs(o.ret); }).sort(function(a,b){ return a-b; });
+  var cap=abs.length ? abs[Math.min(abs.length-1, Math.floor(abs.length*0.9))] : 0.1;
+  cap=Math.max(cap,0.02);
+  var first=rows.length?rows[0].ym:'', last=rows.length?rows[rows.length-1].ym:'';
+  var partFirst=v.start.slice(8)!=='01', partLast=+v.end.slice(8)!==lastDay(v.end);
+
+  var h='<tr><th></th>', mo;
+  for(mo=1;mo<=12;mo++) h+='<th>'+mo+'월</th>';
+  $('heat-head').innerHTML=h+'<th class="gap"></th><th>연간</th></tr>';
+
+  var b='';
+  order.forEach(function(y){
+    var row='<tr><th>'+esc(y)+'</th>', acc=1;
+    for(mo=1;mo<=12;mo++){
+      var o=years[y][mo];
+      if(!o){ row+='<td class="na"></td>'; continue; }
+      acc*=1+o.ret;
+      var part=(o.ym===first&&partFirst)||(o.ym===last&&partLast);
+      row+='<td'+(part?' class="part"':'')+' data-ym="'+o.ym+'" style="'+heatColor(o.ret,cap)+'">'+
+        hv(o.ret)+'</td>';
+    }
+    // 연간은 월보다 폭이 커서 눈금을 세 배로 넓힌다
+    row+='<td class="gap"></td><td class="yr" data-y="'+y+'" data-r="'+(acc-1)+'" style="'+
+      heatColor(acc-1,cap*3)+'">'+hv(acc-1)+'</td></tr>';
+    b+=row;
+  });
+  $('heat-body').innerHTML=b;
+  $('heat-key').innerHTML=esc(pc(-cap,0))+'<i style="background:linear-gradient(90deg,rgb('+
+    HEAT_DN.join(',')+'),rgb('+HEAT_NEU.join(',')+'),rgb('+HEAT_UP.join(',')+'))"></i>'+esc(pc(cap,0));
+
+  var tip=$('tip-heat'), wrap=tip.parentNode;
+  $('heat-body').onmousemove=function(ev){
+    var td=ev.target.closest('td'), html=null;
+    if(td&&td.getAttribute('data-ym')){
+      var o=byYm[td.getAttribute('data-ym')];
+      html='<b>'+o.year+'년 '+o.month+'월</b><br>수익률 '+pc(o.ret)+
+        '<br>월말 '+moneyFull(o.last)+'<br>거래일 '+o.days+'일';
+    } else if(td&&td.getAttribute('data-y')){
+      html='<b>'+td.getAttribute('data-y')+'년</b><br>연간 '+pc(+td.getAttribute('data-r'));
+    }
+    if(!html){ tip.classList.remove('on'); return; }
+    tip.innerHTML=html; tip.classList.add('on');
+    var wb=wrap.getBoundingClientRect(), cb=td.getBoundingClientRect();
+    var x=cb.right-wb.left+6;
+    if(x+tip.offsetWidth>wrap.clientWidth-4) x=cb.left-wb.left-tip.offsetWidth-6;
+    tip.style.left=x+'px'; tip.style.top=(cb.top-wb.top)+'px';
+  };
+  $('heat-body').onmouseleave=function(){ tip.classList.remove('on'); };
+}
+
 /* ── 실행 ────────────────────────────────────────────────── */
 function stat(label,val,sub){
   return '<div class="stat"><dt>'+esc(label)+'</dt><dd>'+esc(val)+'</dd>'+
@@ -708,9 +824,13 @@ function run(){
   var bhCagr=Math.pow(bh[bh.length-1]/bh[0],1/m.years)-1;
 
   $('loading').hidden=true; $('stats').hidden=false; $('curve').hidden=false;
+  /* 1년 미만은 연환산하면 숫자가 과장되므로 기간 수익률을 앞에 둔다 */
+  var head = m.years<1
+    ? stat('기간 수익률', pc(m.final/r.equity[0]-1), tname+' 보유 '+pc(bh[bh.length-1]/bh[0]-1))
+    : stat('CAGR', pcRaw(m.cagr), tname+' 보유 '+pcRaw(bhCagr));
   $('stats').innerHTML=
-    stat('CAGR', pcRaw(m.cagr), tname+' 보유 '+pcRaw(bhCagr))+
-    stat('최대 낙폭', pcRaw(m.mdd), 'Calmar '+(m.calmar?m.calmar.toFixed(2):'—'))+
+    head+
+    stat('최대 낙폭', pcRaw(m.mdd), 'Calmar '+(m.calmar&&m.years>=1?m.calmar.toFixed(2):'—'))+
     stat('최종 자산', money(m.final), '시드 '+moneyFull(r.seed0))+
     stat('승률', pcRaw(m.winrate), m.trades.toLocaleString('en-US')+'건 청산');
 
@@ -728,6 +848,7 @@ function run(){
 
   drawCurve(r,m,bh);
   drawAnnual(B.annual(r));
+  drawMonthly(B.monthly(r), v);
 
   var tb=$('roll-body'); tb.innerHTML='';
   var y0=+v.start.slice(0,4)+(v.start.slice(5)==='01-01'?0:1);

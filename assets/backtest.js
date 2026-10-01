@@ -223,6 +223,24 @@
     return out;
   }
 
+  /* 월별 수익률 — 직전 월말 자산을 기준으로 이어 붙인다(첫 달은 구간 첫날 기준).
+   * 같은 해의 달을 곱하면 그 해의 연간 수익률(직전 연말 대비)이 된다. */
+  function monthly(r) {
+    var out = [], cur = null, base = r.equity[0];
+    for (var i = 0; i < r.dates.length; i++) {
+      var ym = r.dates[i].slice(0, 7);
+      if (!cur || cur.ym !== ym) {
+        if (cur) base = cur.last;
+        cur = { ym: ym, year: ym.slice(0, 4), month: +ym.slice(5, 7), base: base,
+                last: r.equity[i], days: 0 };
+        out.push(cur);
+      }
+      cur.last = r.equity[i]; cur.days++;
+    }
+    out.forEach(function (o) { o.ret = o.last / o.base - 1; });
+    return out;
+  }
+
   function rolling(hist, years, cfg) {
     var res = [], modes = (cfg && cfg.modes) || assignModes(hist, cfg || {});
     var yN = +hist.dates[hist.dates.length - 1].slice(0, 4);
@@ -241,7 +259,7 @@
               SEC_FEE: SEC_FEE, MAX_TIER: MAX_TIER,
               floorCent: floorCent, ceilCent: ceilCent, centerPrice: centerPrice,
               assignModes: assignModes, backtest: backtest, metrics: metrics,
-              buyHold: buyHold, annual: annual, rolling: rolling };
+              buyHold: buyHold, annual: annual, monthly: monthly, rolling: rolling };
 
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.GridBacktest = api;
