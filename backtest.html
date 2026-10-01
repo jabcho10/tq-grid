@@ -102,26 +102,32 @@ details.tableview > summary::-webkit-details-marker{display:none}
 details.tableview > summary:focus-visible{outline:2px solid var(--primary-focus);
   outline-offset:2px;border-radius:var(--r-xs)}
 details.tableview[open] > summary{margin-bottom:var(--s-md)}
-/* 월별 히트맵 — 상승은 액센트 블루, 하락은 레드, 0 근처는 중립 회색.
-   셀마다 값을 적어 색만으로 부호를 읽게 하지 않는다. */
-.heatwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;position:relative}
-table.heat{border-collapse:separate;border-spacing:2px;width:100%;min-width:720px;
-  font-variant-numeric:tabular-nums;table-layout:fixed}
-table.heat th,table.heat td{border:none;padding:0;text-align:center;font-size:12px;
-  letter-spacing:-.12px;height:34px}
-table.heat thead th{font-weight:400;color:var(--ink-muted-48);height:24px}
-table.heat tbody th{font-weight:600;color:var(--ink-muted-80);text-align:left;
-  padding-left:2px;width:52px;position:sticky;left:0;background:var(--canvas-parchment);z-index:1}
-table.heat thead th:first-child{width:52px}
-table.heat td{border-radius:4px;color:var(--ink);cursor:default}
-table.heat td.na{background:transparent}
-table.heat td.yr{font-weight:600}
-table.heat th.gap,table.heat td.gap{width:6px;background:transparent}
-table.heat td.part{box-shadow:inset 0 0 0 1px rgba(0,0,0,.28)}
-table.heat td[data-ym]:hover,table.heat td[data-y]:hover{outline:2px solid var(--ink);outline-offset:-1px}
-.heatkey{display:inline-flex;align-items:center;gap:6px;margin-left:auto;
-  font-size:12px;letter-spacing:-.12px;color:var(--ink-muted-48);font-variant-numeric:tabular-nums}
-.heatkey i{display:inline-block;width:120px;height:8px;border-radius:4px}
+/* 월별 수익률 표 — 상승은 초록, 하락은 빨강 글씨에 같은 색의 옅은 배경.
+   폭이 클수록 배경이 진해지며, 부호를 붙인 값이 함께 있어 색만으로 읽지 않는다. */
+.heatcap{display:flex;align-items:baseline;gap:var(--s-sm);flex-wrap:wrap;
+  margin:var(--s-xl) 0 var(--s-sm)}
+.heatcap h3{margin:0;font-size:21px;font-weight:600;letter-spacing:.231px}
+.heatcap .note{font-size:12px;letter-spacing:-.12px;color:var(--ink-muted-48);
+  font-variant-numeric:tabular-nums}
+.heatcap .note b{font-weight:600;color:var(--ink-muted-80)}
+.heatwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;background:var(--canvas);
+  border:1px solid var(--hairline);border-radius:var(--r-sm)}
+table.heat{border-collapse:collapse;width:100%;min-width:760px;
+  font-variant-numeric:tabular-nums}
+table.heat th,table.heat td{padding:0 12px;height:40px;text-align:right;font-size:14px;
+  letter-spacing:-.224px;border:none;border-bottom:1px solid var(--divider-soft);white-space:nowrap}
+table.heat tbody tr:last-child th,table.heat tbody tr:last-child td{border-bottom:none}
+table.heat thead th{font-weight:600;color:var(--ink-muted-80);background:var(--canvas-parchment);
+  border-bottom:1px solid var(--hairline);height:42px}
+table.heat th:first-child{text-align:left;width:64px;position:sticky;left:0;z-index:1}
+table.heat tbody th{font-weight:600;color:var(--ink-muted-80);background:var(--canvas)}
+table.heat td{cursor:default}
+table.heat td.up{color:#2e7d32}
+table.heat td.dn{color:#c62f45}
+table.heat td.na{color:var(--ink-muted-48)}
+table.heat .yr{border-left:1px solid var(--hairline);font-weight:600;background:var(--canvas)}
+table.heat thead .yr{background:var(--canvas-parchment)}
+table.heat td[data-ym]:hover,table.heat td[data-y]:hover{box-shadow:inset 0 0 0 2px var(--ink)}
 .loading{padding-block:var(--s-xxl);text-align:center;color:var(--ink-muted-48);
   font-size:17px;letter-spacing:-.374px}
 </style>
@@ -268,14 +274,13 @@ table.heat td[data-ym]:hover,table.heat td[data-y]:hover{outline:2px solid var(-
       </div>
     </details>
 
-    <div class="figcap" id="monthly" style="margin-top:var(--s-xl)">
+    <div class="heatcap" id="monthly">
       <h3>월별 수익률</h3>
-      <span class="note">직전 월말 대비 % · 테두리 칸은 일부 기간만 반영 · 연간은 월별을 곱한 값</span>
-      <span class="heatkey" id="heat-key"></span>
+      <span class="note" id="heat-note"></span>
     </div>
     <div class="plotwrap">
       <div class="heatwrap">
-        <table class="heat" aria-label="연도·월별 전략 수익률 히트맵">
+        <table class="heat" aria-label="연도·월별 전략 수익률">
           <thead id="heat-head"></thead>
           <tbody id="heat-body"></tbody>
         </table>
@@ -734,55 +739,63 @@ function drawAnnual(rows){
   });
 }
 
-/* ── 월별 히트맵 ─────────────────────────────────────────── */
-var HEAT_NEU=[240,239,236], HEAT_UP=[0,102,204], HEAT_DN=[201,53,63];
-function heatColor(x, cap){
-  var t=Math.min(Math.abs(x)/cap,1), p=x>=0?HEAT_UP:HEAT_DN, c=[0,0,0];
-  for(var k=0;k<3;k++) c[k]=Math.round(HEAT_NEU[k]+(p[k]-HEAT_NEU[k])*t);
-  return 'background:rgb('+c.join(',')+')'+(t>0.55?';color:#fff':'');
+/* ── 월별 수익률 표 ──────────────────────────────────────── */
+var HEAT_UP='46,125,50', HEAT_DN='198,47,69';
+function heatStyle(x, cap){
+  var t=Math.min(Math.abs(x)/cap,1);
+  return 'background:rgba('+(x>=0?HEAT_UP:HEAT_DN)+','+(0.03+0.14*t).toFixed(3)+')';
 }
-function hv(x){ var s=(x*100).toFixed(1); return s==='-0.0'?'0.0':s.replace('-','−'); }
-function lastDay(iso){
-  return new Date(Date.UTC(+iso.slice(0,4), +iso.slice(5,7), 0)).getUTCDate();
+/* 부호를 붙인 소수 한 자리 — 반올림해 0 이 되면 +0.0 으로 */
+function hv(x){
+  var s=(x*100).toFixed(1);
+  if(s==='-0.0') s='0.0';
+  return s.charAt(0)==='-' ? '−'+s.slice(1) : '+'+s;
 }
-function drawMonthly(rows, v){
+function drawMonthly(rows){
   var years={}, order=[], byYm={};
   rows.forEach(function(o){
     if(!years[o.year]){ years[o.year]={}; order.push(o.year); }
     years[o.year][o.month]=o; byYm[o.ym]=o;
   });
-  order.reverse();                                   // 최근 해가 위로
-  /* 색 눈금은 월 수익률 절댓값의 90백분위로 맞춘다 — 한두 달의 급등락이
-     나머지 칸을 전부 옅게 만들지 않게 한다 */
+  /* 배경 진하기는 월 수익률 절댓값의 90백분위에서 꽉 차게 한다 — 한두 달의
+     급등락이 나머지 칸을 전부 옅게 만들지 않게 */
   var abs=rows.map(function(o){ return Math.abs(o.ret); }).sort(function(a,b){ return a-b; });
   var cap=abs.length ? abs[Math.min(abs.length-1, Math.floor(abs.length*0.9))] : 0.1;
   cap=Math.max(cap,0.02);
-  var first=rows.length?rows[0].ym:'', last=rows.length?rows[rows.length-1].ym:'';
-  var partFirst=v.start.slice(8)!=='01', partLast=+v.end.slice(8)!==lastDay(v.end);
 
-  var h='<tr><th></th>', mo;
+  var h='<tr><th>연도</th>', mo;
   for(mo=1;mo<=12;mo++) h+='<th>'+mo+'월</th>';
-  $('heat-head').innerHTML=h+'<th class="gap"></th><th>연간</th></tr>';
+  $('heat-head').innerHTML=h+'<th class="yr">연간</th></tr>';
 
   var b='';
   order.forEach(function(y){
     var row='<tr><th>'+esc(y)+'</th>', acc=1;
     for(mo=1;mo<=12;mo++){
       var o=years[y][mo];
-      if(!o){ row+='<td class="na"></td>'; continue; }
+      if(!o){ row+='<td class="na">—</td>'; continue; }
       acc*=1+o.ret;
-      var part=(o.ym===first&&partFirst)||(o.ym===last&&partLast);
-      row+='<td'+(part?' class="part"':'')+' data-ym="'+o.ym+'" style="'+heatColor(o.ret,cap)+'">'+
-        hv(o.ret)+'</td>';
+      var t=hv(o.ret);
+      row+='<td class="'+(t.charAt(0)==='+'?'up':'dn')+'" data-ym="'+o.ym+'" style="'+heatStyle(o.ret,cap)+'">'+t+'</td>';
     }
-    // 연간은 월보다 폭이 커서 눈금을 세 배로 넓힌다
-    row+='<td class="gap"></td><td class="yr" data-y="'+y+'" data-r="'+(acc-1)+'" style="'+
-      heatColor(acc-1,cap*3)+'">'+hv(acc-1)+'</td></tr>';
+    var ty=hv(acc-1);
+    row+='<td class="yr '+(ty.charAt(0)==='+'?'up':'dn')+'" data-y="'+y+'" data-r="'+(acc-1)+'">'+ty+'</td></tr>';
     b+=row;
   });
   $('heat-body').innerHTML=b;
-  $('heat-key').innerHTML=esc(pc(-cap,0))+'<i style="background:linear-gradient(90deg,rgb('+
-    HEAT_DN.join(',')+'),rgb('+HEAT_NEU.join(',')+'),rgb('+HEAT_UP.join(',')+'))"></i>'+esc(pc(cap,0));
+
+  /* 요약 — 개월 수, 상승 비율, 월평균(산술), 최고·최저 달 */
+  var up=0, sum=0, best=null, worst=null;
+  rows.forEach(function(o){
+    if(o.ret>0) up++;
+    sum+=o.ret;
+    if(!best||o.ret>best.ret) best=o;
+    if(!worst||o.ret<worst.ret) worst=o;
+  });
+  $('heat-note').innerHTML = rows.length ?
+    '각 칸은 직전 월말 대비 자산 증감(단위 %) · 색이 진할수록 폭이 큽니다 · '+
+    rows.length+'개월 · 상승 '+up+'개월('+Math.round(up/rows.length*100)+'%) · 월평균 '+
+    esc(pc(sum/rows.length,1))+' · 최고 <b>'+esc(pc(best.ret,1))+'</b>('+best.ym+') · 최저 <b>'+
+    esc(pc(worst.ret,1))+'</b>('+worst.ym+')' : '';
 
   var tip=$('tip-heat'), wrap=tip.parentNode;
   $('heat-body').onmousemove=function(ev){
@@ -848,7 +861,7 @@ function run(){
 
   drawCurve(r,m,bh);
   drawAnnual(B.annual(r));
-  drawMonthly(B.monthly(r), v);
+  drawMonthly(B.monthly(r));
 
   var tb=$('roll-body'); tb.innerHTML='';
   var y0=+v.start.slice(0,4)+(v.start.slice(5)==='01-01'?0:1);
