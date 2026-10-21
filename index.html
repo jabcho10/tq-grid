@@ -30,8 +30,9 @@ img{max-width:100%}
     <span class="cat">주문서</span>
     <span class="links">
       <a href="#orders">오늘 낼 주문</a>
-      <a href="#inputs">기준 입력</a>
+      <a href="#fills">체결 기록</a>
       <a href="#positions">보유 포지션</a>
+      <a href="#inputs">기준 입력</a>
       <a href="#mode">매매 모드</a>
       <a href="#weights">티어 비중</a>
     </span>
@@ -52,61 +53,12 @@ img{max-width:100%}
   </div>
 </section>
 
-<!-- 기준 입력 -->
-<section class="tile tile-parchment" id="inputs">
+<!-- 체결 기록 -->
+<section class="tile tile-parchment" id="fills">
   <div class="inner">
     <div class="sec-head">
-      <h2>기준 입력</h2>
-      <span class="meta" id="feed-meta">직전 완료 주의 마지막 QQQ 종가가 이번 주 모드를 확정합니다</span>
-      <button class="link-btn" id="btn-reload" type="button">종가 새로고침</button>
-    </div>
-    <div class="formgrid">
-      <div class="field">
-        <label for="f-date">주문일</label>
-        <input type="date" id="f-date">
-      </div>
-      <div class="field">
-        <label for="f-prev"><span id="lbl-prev">TQQQ</span> 전일 종가</label>
-        <input type="number" id="f-prev" step="0.01" min="0" inputmode="decimal">
-      </div>
-      <div class="field">
-        <label for="f-qqqd">QQQ 기준일</label>
-        <input type="date" id="f-qqqd">
-      </div>
-      <div class="field">
-        <label for="f-qqq">QQQ 기준 종가</label>
-        <input type="number" id="f-qqq" step="0.01" min="0" inputmode="decimal">
-      </div>
-      <div class="field">
-        <label for="f-seed">운용 시드 · 실현손익 기준</label>
-        <input type="number" id="f-seed" step="1" min="0" inputmode="decimal">
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- 보유 포지션 -->
-<section class="tile tile-light" id="positions">
-  <div class="inner">
-    <div class="sec-head">
-      <h2>보유 포지션</h2>
-      <span class="meta" id="pos-meta"></span>
-      <span class="meta">수정을 눌러 티어·체결 내역을 고칩니다</span>
-    </div>
-    <div class="tblwrap">
-      <table class="postable">
-        <thead><tr>
-          <th>티어</th><th>진입 모드</th><th>매수가</th><th>수량</th><th>체결일</th>
-          <th>익절가</th><th>경과</th><th>평가손익</th><th></th>
-        </tr></thead>
-        <tbody id="pos-body"></tbody>
-      </table>
-    </div>
-    <p class="empty" id="pos-empty" hidden>보유 포지션이 없습니다. 1티어부터 매수합니다.</p>
-
-    <div class="sec-head" style="margin-top:var(--s-xxl)">
-      <h2 class="sub">체결 기록</h2>
-      <span class="meta">LOC가 체결되면 실제 체결가로 입력하세요</span>
+      <h2>체결 기록</h2>
+      <span class="meta" id="fill-meta">LOC가 체결되면 실제 체결가로 입력하세요</span>
     </div>
     <div class="formgrid">
       <div class="field">
@@ -135,6 +87,62 @@ img{max-width:100%}
       </div>
       <div class="field" style="justify-content:flex-end">
         <button class="btn-ghost" id="btn-add" type="button">포지션 추가</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 보유 포지션 -->
+<section class="tile tile-light" id="positions">
+  <div class="inner">
+    <div class="sec-head">
+      <h2>보유 포지션</h2>
+      <span class="meta" id="pos-meta"></span>
+      <span class="meta">수정을 눌러 티어·체결 내역을 고칩니다</span>
+    </div>
+    <div class="tblwrap">
+      <table class="postable">
+        <thead><tr>
+          <th>티어</th><th>진입 모드</th><th>매수가</th><th>수량</th><th>체결일</th>
+          <th>익절가</th><th>경과</th><th>평가손익</th><th></th>
+        </tr></thead>
+        <tbody id="pos-body"></tbody>
+      </table>
+    </div>
+    <p class="empty" id="pos-empty" hidden>보유 포지션이 없습니다. 1티어부터 매수합니다.</p>
+  </div>
+</section>
+
+<!-- 기준 입력 -->
+<section class="tile tile-parchment" id="inputs">
+  <div class="inner">
+    <div class="sec-head">
+      <h2>기준 입력</h2>
+      <span class="meta" id="feed-meta">직전 완료 주의 마지막 QQQ 종가가 이번 주 모드를 확정합니다</span>
+      <button class="link-btn" id="btn-reload" type="button">종가 새로고침</button>
+      <button class="link-btn strong" id="btn-inputs" type="button"
+              aria-expanded="false" aria-controls="inputs-body">펼치기</button>
+    </div>
+    <div class="formgrid" id="inputs-body" hidden>
+      <div class="field">
+        <label for="f-date">주문일</label>
+        <input type="date" id="f-date">
+      </div>
+      <div class="field">
+        <label for="f-prev"><span id="lbl-prev">TQQQ</span> 전일 종가</label>
+        <input type="number" id="f-prev" step="0.01" min="0" inputmode="decimal">
+      </div>
+      <div class="field">
+        <label for="f-qqqd">QQQ 기준일</label>
+        <input type="date" id="f-qqqd">
+      </div>
+      <div class="field">
+        <label for="f-qqq">QQQ 기준 종가</label>
+        <input type="number" id="f-qqq" step="0.01" min="0" inputmode="decimal">
+      </div>
+      <div class="field">
+        <label for="f-seed">운용 시드 · 실현손익 기준</label>
+        <input type="number" id="f-seed" step="1" min="0" inputmode="decimal">
       </div>
     </div>
   </div>
@@ -423,7 +431,7 @@ function applyFeed(d){
   state.qqqClose=+d.qqq_week.close;
   state.qqqDate=d.qqq_week.date;
   if(d.order_date && d.order_date>state.orderDate){
-    state.orderDate=d.order_date; $('a-date').value=d.order_date;
+    state.orderDate=d.order_date;
   }
   lastFeed=d;
   syncInputs(); render(); feedMeta();
@@ -449,8 +457,86 @@ function loadFeed(manual){
     .then(function(d){ applyFeed(d); if(manual) toast('종가를 불러왔습니다'); })
     ['catch'](function(){
       $('feed-meta').textContent='종가를 불러오지 못했습니다. 아래 값을 직접 입력하세요.';
+      setInputsOpen(true);
       if(manual) toast('종가를 불러오지 못했습니다');
     });
+}
+
+/* ── 전일 매수 재현 ─────────────────────────────────────────
+   체결 기록은 전일 LOC 매수가 체결됐다고 보고 미리 채운다. 전전일 종가로
+   어제 지정가·수량을 다시 계산하고, 체결가는 어제 종가(LOC 체결가)로 둔다. */
+var hist=null;                            // data/history.json — { dates, tqqq, soxl, qqq }
+function histClose(key,d){
+  if(!hist||!hist.idx||!(d in hist.idx)) return null;
+  var v=hist[key]&&hist[key][hist.idx[d]];
+  return v>0?+v:null;
+}
+function loadHistory(){
+  if(typeof fetch!=='function') return;
+  fetch('data/history.json',{cache:'no-cache'})
+    .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(d){
+      d.idx={}; (d.dates||[]).forEach(function(x,i){ d.idx[x]=i; });
+      hist=d; render();
+    })['catch'](function(){});
+}
+/* 종가는 장 마감 뒤에야 들어오므로 체결일은 언제나 주문일의 전 영업일이다 */
+function fillDate(){
+  var od=parseISO(state.orderDate);
+  return isNaN(od.getTime())?'':iso(backTradingDays(od,1));
+}
+function yesterdayFill(){
+  var y=fillDate();
+  if(!y) return null;
+  var y2=iso(backTradingDays(parseISO(y),1));
+
+  // 예시 장부는 비어 있는 것으로 본다
+  var book=state.seeded?[]:state.positions;
+  if(book.some(function(p){ return p.date===y; }))
+    return { y:y, done:true };
+
+  var c1=histClose(state.ticker,y)||(state.prevClose>0?state.prevClose:null);   // 어제 종가 = 체결가
+  var c2=histClose(state.ticker,y2);                                     // 전전일 종가 = 어제 지정가 기준
+  var ref=weekRefDate(y);
+  var qc=(ref===state.qqqDate&&state.qqqClose>0)?state.qqqClose:histClose('qqq',ref);
+  if(!(c1>0)||!(c2>0)||!(qc>0)) return { y:y, nodata:true };
+
+  var mode=modeOf(qc/centerPrice(parseISO(ref))-1);
+  var held=book.filter(function(p){ return p.date && p.date<y; }), used={}, tier=null, t;
+  held.forEach(function(p){ used[p.tier]=true; });
+  for(t=1;t<=MAX_TIER;t++) if(!used[t]){ tier=t; break; }
+  if(tier==null||(!state.seeded&&heldTiers()[tier])) return { y:y, none:true };
+  // §6.3 천장 모드 MOC 당일에는 신규 매수를 내지 않았다
+  if(mode==='top' && held.some(function(p){ return elapsed(p.date,y)>=P[p.mode].moc; }))
+    return { y:y, none:true };
+
+  var limit=floorCent(c2*(1+buyRateOf(mode,tier)));
+  if((mode==='bottom'||mode==='top') && held.length){
+    var minTp=Math.min.apply(null, held.map(function(p){
+      return ceilCent(p.price*(1+tpRateOf(p.mode,p.tier))); }));
+    if(minTp-0.01<limit) limit=round8(minTp-0.01);
+  }
+  var q=limit>0?Math.floor(state.seed*P[mode].w[tier-1]/limit):0;
+  if(q<1) return { y:y, none:true };
+  return { y:y, tier:tier, mode:mode, limit:limit, price:c1, qty:q, filled:c1<=limit };
+}
+var fillTouched=false;                    // 체결가·수량·체결일을 손으로 고쳤으면 덮어쓰지 않는다
+function applyFill(){
+  var f=yesterdayFill(), m=$('fill-meta');
+  if(!f){ m.textContent='LOC가 체결되면 실제 체결가로 입력하세요'; return null; }
+  if(!fillTouched){
+    var ok=(f.qty>0);
+    $('a-price').value=ok?f.price:'';
+    $('a-qty').value=ok?f.qty:'';
+    $('a-date').value=f.y;
+  }
+  m.textContent = f.done ? f.y+' 체결분은 이미 보유 포지션에 있습니다'
+    : f.nodata ? f.y+' 매수를 재현할 종가가 없어 직접 입력하세요'
+    : f.none ? f.y+'에는 낼 매수 주문이 없었습니다'
+    : f.y+' '+P[f.mode].ko+' '+f.tier+'티어 LOC '+usd(f.limit)+' × '+qtyf(f.qty)+'주 → 종가 '+
+      usd(f.price)+' 체결 가정'+
+      (f.filled?'':' · 종가가 지정가보다 높아 실제로는 미체결일 수 있습니다');
+  return f.qty>0?f:null;
 }
 
 /* ── 계산 ────────────────────────────────────────────────── */
@@ -526,6 +612,7 @@ function render(){
   var dark=(c.mode==='top'||!c.mode);
 
   $('mode').className='tile tile-compact '+(c.mode?SURFACE[c.mode]:'tile-dark-3');
+  $('inputs').className='tile '+(c.mode==='middle'?'tile-light':'tile-parchment');
   $('weights').className='tile '+(c.mode==='middle'?'tile-light':'tile-parchment');
   $('nav-date').textContent=state.orderDate;
   // 백테스트로 넘어갈 때 지금 시드를 들고 간다
@@ -598,8 +685,9 @@ function render(){
   }
   $('pos-empty').hidden = c.list.length>0;
   $('pos-meta').textContent = c.list.length+' / '+MAX_TIER+'티어'+(state.seeded?' · 예시 데이터':'');
-  if(!modeTouched && c.mode) $('a-mode').value=c.mode;
-  syncTierOptions();
+  var af=applyFill();
+  if(!modeTouched && (af||c.mode)) $('a-mode').value=af?af.mode:c.mode;
+  syncTierOptions(af?af.tier:null);
 
   window.__c=c;
 }
@@ -634,10 +722,10 @@ function cellDate(p){
 
 /* 체결 기록의 티어 선택 — 보유 중인 티어는 고를 수 없고, 손대기 전에는
    다음 매수 티어를 미리 잡아 둔다. */
-function syncTierOptions(){
+function syncTierOptions(auto){
   /* 예시 장부는 첫 입력에 통째로 비워지므로 자리를 막지 않고 1티어부터 연다 */
   var sel=$('a-tier'), held=state.seeded?{}:heldTiers(),
-      dflt=state.seeded?1:nextTier(),
+      dflt=auto||(state.seeded?1:nextTier()),
       want=tierTouched?Math.floor(+sel.value):dflt, h='', t;
   if(!(want>=1&&want<=MAX_TIER)||held[want]){ want=dflt; tierTouched=false; }
   for(t=1;t<=MAX_TIER;t++)
@@ -710,8 +798,8 @@ function activate(tk){
   state.ticker=tk; P=PARAMS[tk];
   state.prevClose=b.prevClose; state.seed=b.seed;
   state.positions=b.positions; state.seeded=!!b.seeded;
-  modeTouched=false; tierTouched=false;
-  markTicker(); syncInputs(); $('a-date').value=state.orderDate;
+  modeTouched=false; tierTouched=false; fillTouched=false;
+  markTicker(); syncInputs();
   save(); render(); feedMeta();
   toast(TNAME[tk]+' 장부로 바꿨습니다');
 }
@@ -734,6 +822,8 @@ bind('f-qqqd','qqqDate',false);   bind('f-qqq','qqqClose',true);
 bind('f-seed','seed',true);
 $('a-mode').addEventListener('change',function(){ modeTouched=true; });
 $('a-tier').addEventListener('change',function(){ tierTouched=true; });
+['a-price','a-qty','a-date'].forEach(function(id){
+  $(id).addEventListener('input',function(){ fillTouched=true; }); });
 
 /* 표 안의 수정 — '수정'을 눌러 연 행에서만 고치고, '저장'을 눌러야 반영된다.
    규칙에 어긋나면 아무것도 바꾸지 않고 수정 상태로 남겨 다시 고치게 한다. */
@@ -810,6 +900,7 @@ $('btn-add').addEventListener('click',function(){
     mode:m, price:price, qty:q, date:d });
   state.positions.sort(function(a,b){ return a.tier-b.tier; });
   $('a-price').value=''; $('a-qty').value=''; tierTouched=false;
+  modeTouched=false; fillTouched=false;
   save(); render(); toast(tier+'티어 포지션을 추가했습니다');
 });
 
@@ -858,11 +949,23 @@ TICKERS.forEach(function(tk){
 
 $('btn-reload').addEventListener('click',function(){ loadFeed(true); });
 
+/* 기준 입력 접기 — 평소에는 자동 수집값을 쓰니 접어 두고, 펼친 상태는 기억한다 */
+function setInputsOpen(on){
+  $('inputs-body').hidden=!on;
+  $('btn-inputs').setAttribute('aria-expanded',on?'true':'false');
+  $('btn-inputs').textContent=on?'접기':'펼치기';
+  try{ localStorage.setItem('tqqq-grid-inputs-open', on?'1':'0'); }catch(e){}
+}
+$('btn-inputs').addEventListener('click',function(){ setInputsOpen($('inputs-body').hidden); });
+document.querySelector('.sub-nav a[href="#inputs"]').addEventListener('click',function(){ setInputsOpen(true); });
+(function(){ var v=null; try{ v=localStorage.getItem('tqqq-grid-inputs-open'); }catch(e){}
+  setInputsOpen(v==='1'); })();
+
 /* 탭을 열어둔 사이 날짜가 넘어가면 주문일을 따라 올린다. */
 function refreshOrderDate(){
   var auto=currentOrderDate();
   if(auto<=state.orderDate) return;
-  state.orderDate=auto; $('a-date').value=auto;
+  state.orderDate=auto;
   syncInputs(); save(); render(); loadFeed(false);
 }
 setInterval(refreshOrderDate,60000);
@@ -870,11 +973,12 @@ document.addEventListener('visibilitychange',function(){
   if(!document.hidden) refreshOrderDate();
 });
 
-$('a-date').value=state.orderDate;
+$('a-date').value=fillDate();
 markTicker();
 syncInputs();
 render();
 loadFeed(false);
+loadHistory();
 })();
 </script>
 
