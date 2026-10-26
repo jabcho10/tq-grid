@@ -297,7 +297,7 @@ function buyRateOf(m,t){ return (m==='top'&&t===1)?P.top.buy1:P[m].buy; }
 
 /* ── 상태 ────────────────────────────────────────────────── */
 var today = parseISO(currentOrderDate());
-function emptyBook(){ return { prevClose:0, seed:10000, positions:[], seeded:false }; }
+function emptyBook(){ return { prevClose:0, seed:10000, positions:[], closed:[], seeded:false }; }
 
 /* 활성 종목의 장부는 state 에 펼쳐 두고, 나머지는 state.books 에 보관한다.
    전일 종가·시드·포지션은 종목마다 따로, 주문일과 QQQ 기준값은 공통이다. */
@@ -312,40 +312,44 @@ var state = {
     { id:'ex1', tier:1, mode:'top', price:74.54, qty:2, date:iso(backTradingDays(today,3)) },
     { id:'ex2', tier:2, mode:'top', price:72.18, qty:3, date:iso(backTradingDays(today,1)) }
   ],
+  closed: [],
   seeded: true,
   books: { soxl: emptyBook() }
 };
 function liveBook(){
   return { prevClose:state.prevClose, seed:state.seed,
-           positions:state.positions, seeded:state.seeded };
+           positions:state.positions, closed:state.closed, seeded:state.seeded };
 }
 
-/* 티어는 직접 입력할 수 있으므로 '보유 개수+1'이 아니라 실제로 비어 있는
-   자리를 기준으로 삼는다. 1~7티어를 순서대로 채우면 결과는 종전과 같다. */
+/* 티어 = 전일 보유 개수 + 1 (방법론 §4.1, engine.py). 낮은 티어가 먼저 청산되면
+   같은 티어 번호가 둘 이상 보유될 수 있다 — 엔진도 그렇게 동작한다.
+   티어 번호는 비중과 천장 1티어 매수·익절률을 고르는 데만 쓴다. */
 var idSeq=0;
 function newId(){ return 'p'+Date.now().toString(36)+'-'+(++idSeq).toString(36); }
-function heldTiers(){
-  var s={}; state.positions.forEach(function(p){ s[p.tier]=true; }); return s;
-}
 function nextTier(){
-  var s=heldTiers(), t;
-  for(t=1;t<=MAX_TIER;t++) if(!s[t]) return t;
-  return null;                                   // 7티어 만재
+  var n=state.positions.length;
+  return n<MAX_TIER ? n+1 : null;                // 7개 보유면 만재
 }
-/* 저장본·수기 입력이 섞여도 티어는 1~7 안에서 서로 겹치지 않게 정돈한다. */
+function byTier(a,b){ return a.tier-b.tier || ((a.date||'')<(b.date||'')?-1:(a.date||'')>(b.date||'')?1:0); }
+/* 저장본·수기 입력이 섞여도 티어는 1~7, 보유는 최대 7개로 정돈한다. */
 function normalizePositions(list){
-  var used={}, seen={}, out=[];
+  var seen={}, out=[];
   (list||[]).forEach(function(p){
-    if(!p||typeof p!=='object') return;
+    if(!p||typeof p!=='object'||out.length>=MAX_TIER) return;   // 7개를 넘으면 버린다
     if(!p.id||seen[p.id]) p.id=newId();       // 행을 하나씩 다루려면 id가 겹치면 안 된다
     seen[p.id]=true;
     var t=Math.floor(+p.tier);
-    if(!(t>=1&&t<=MAX_TIER)||used[t]){ t=0;
-      for(var i=1;i<=MAX_TIER;i++) if(!used[i]){ t=i; break; } }
-    if(!t) return;                               // 자리가 없으면 버린다
-    used[t]=true; p.tier=t; out.push(p);
+    p.tier=(t>=1&&t<=MAX_TIER)?t:out.length+1;
+    out.push(p);
   });
-  return out.sort(function(a,b){ return a.tier-b.tier; });
+  return out.sort(byTier);
+}
+/* 청산 기록 — 전일 매수 재현에 '어제 장 시작 때 보유분'이 필요해서 남긴다.
+   어제 익절·MOC로 나간 포지션도 어제 매수의 티어·§6.1·§6.3 판정에 들어간다. */
+function normalizeClosed(list){
+  return (Array.isArray(list)?list:[]).filter(function(c){
+    return c && c.date && c.exit && P[c.mode] && c.price>0 && c.tier>=1 && c.tier<=MAX_TIER;
+  }).slice(-20);
 }
 
 /* ── 저장 ────────────────────────────────────────────────── */
@@ -354,7 +358,8 @@ function persistable(){
   var books={};
   TICKERS.forEach(function(tk){
     var b = (tk===state.ticker) ? liveBook() : (state.books[tk]||emptyBook());
-    books[tk] = { prevClose:b.prevClose, seed:b.seed, positions:b.positions, seeded:false };
+    books[tk] = { prevClose:b.prevClose, seed:b.seed, positions:b.positions,
+                  closed:b.closed||[], seeded:false };
   });
   return { v:2, ticker:state.ticker, orderDate:state.orderDate,
            qqqDate:state.qqqDate, qqqClose:state.qqqClose, books:books };
@@ -375,10 +380,11 @@ function adopt(d){
     var book={ prevClose:(b.prevClose!=null?+b.prevClose:0),
                seed:(b.seed!=null?+b.seed:10000),
                positions:normalizePositions(b.positions),
+               closed:normalizeClosed(b.closed),
                seeded:false };
     if(k===tk){
       state.prevClose=book.prevClose; state.seed=book.seed;
-      state.positions=book.positions; state.seeded=false;
+      state.positions=book.positions; state.closed=book.closed; state.seeded=false;
     } else state.books[k]=book;
   });
 }
@@ -480,6 +486,30 @@ function loadHistory(){
       hist=d; render();
     })['catch'](function(){});
 }
+/* 지운 포지션의 청산일 — 엔진 규칙(매수 다음날~MOC 전날 종가 ≥ 익절가면 익절,
+   보유 거래일이 MOC 기간에 닿으면 MOC)을 종가 시계열에 그대로 적용한다.
+   규칙상 아직 청산되지 않았으면 null — 입력 실수를 지운 것으로 본다. */
+function exitDate(p){
+  if(!hist||!hist.idx||!(p.date in hist.idx)) return undefined;   // 판정 불가
+  var i=hist.idx[p.date], s=hist[state.ticker]||[], k,
+      tp=ceilCent(p.price*(1+tpRateOf(p.mode,p.tier))), moc=P[p.mode].moc;
+  for(k=i+1;k<hist.dates.length;k++){
+    if(k-i>=moc || s[k]>=tp) return hist.dates[k];
+  }
+  // 시계열이 직전 거래일까지 오지 않았으면 '아직 보유'라고 단정하지 않는다
+  return hist.dates[hist.dates.length-1]>=fillDate() ? null : undefined;
+}
+function logClosed(p){
+  if(state.seeded||!p||!p.date) return;
+  var ex=exitDate(p);
+  if(ex===null) return;                       // 규칙상 보유 중 — 청산이 아니라 정정
+  if(ex===undefined) ex=fillDate();           // 시계열이 없으면 직전 거래일에 청산된 것으로 본다
+  if(!ex) return;
+  var keep=iso(backTradingDays(parseISO(state.orderDate),10));
+  state.closed=state.closed.filter(function(c){ return c.exit>=keep; });
+  state.closed.push({ tier:p.tier, mode:p.mode, price:p.price, qty:p.qty, date:p.date, exit:ex });
+  state.closed=state.closed.slice(-20);
+}
 /* 종가는 장 마감 뒤에야 들어오므로 체결일은 언제나 주문일의 전 영업일이다 */
 function fillDate(){
   var od=parseISO(state.orderDate);
@@ -502,10 +532,11 @@ function yesterdayFill(){
   if(!(c1>0)||!(c2>0)||!(qc>0)) return { y:y, nodata:true };
 
   var mode=modeOf(qc/centerPrice(parseISO(ref))-1);
-  var held=book.filter(function(p){ return p.date && p.date<y; }), used={}, tier=null, t;
-  held.forEach(function(p){ used[p.tier]=true; });
-  for(t=1;t<=MAX_TIER;t++) if(!used[t]){ tier=t; break; }
-  if(tier==null||(!state.seeded&&heldTiers()[tier])) return { y:y, none:true };
+  // 어제 장 시작 때 보유분 = 지금 남은 포지션 + 어제(이후) 청산돼 지운 포지션
+  var held=book.filter(function(p){ return p.date && p.date<y; });
+  if(!state.seeded) held=held.concat(state.closed.filter(function(c){ return c.date<y && c.exit>=y; }));
+  if(held.length>=MAX_TIER) return { y:y, none:true };
+  var tier=held.length+1;                       // §4.1 전일 보유 개수 + 1
   // §6.3 천장 모드 MOC 당일에는 신규 매수를 내지 않았다
   if(mode==='top' && held.some(function(p){ return elapsed(p.date,y)>=P[p.mode].moc; }))
     return { y:y, none:true };
@@ -569,7 +600,7 @@ function compute(){
   if(mode){
     if(tier==null){
       buy={ k:'halt', head:'신규 매수 없음',
-        why:'7티어를 모두 보유 중입니다. 익절이나 MOC로 티어가 비워질 때까지 신규 매수를 내지 않습니다.' };
+        why:'포지션 7개를 모두 보유 중입니다. 익절이나 MOC로 보유가 줄어들 때까지 신규 매수를 내지 않습니다.' };
     } else if(mode==='top' && list.some(function(it){return it.due;})){
       buy={ k:'halt', head:'신규 매수 없음',
         why:'천장 모드에서 당일 MOC 강제청산 예정 포지션이 있습니다. 방법론 §6.3에 따라 신규 매수를 내지 않습니다.' };
@@ -590,7 +621,8 @@ function compute(){
         buy={ k:'halt', head:'신규 매수 없음',
           why:'배정금액 '+usd(alloc,0)+'로는 지정가 '+usd(limit)+'에서 1주도 매수할 수 없습니다. 운용 시드를 확인하세요.' };
       } else {
-        var why='전일 종가 '+usd(state.prevClose)+' × ('+pct(rate)+') = '+usd(base);
+        var why=tier+'티어 = 보유 '+list.length+'개 + 1 · '+
+                '전일 종가 '+usd(state.prevClose)+' × ('+pct(rate)+') = '+usd(base);
         if(capped) why+=' → 보유 최저 익절가 '+usd(capFrom)+' − $0.01로 <em>하향</em>';
         why+=' · 종가가 지정가 이하면 체결됩니다.';
         buy={ k:'buy', word:'매수', type:'LOC', price:limit, qty:q, tier:tier, mode:mode,
@@ -684,7 +716,7 @@ function render(){
     if(first && focusEdit){ first.focus(); focusEdit=false; }
   }
   $('pos-empty').hidden = c.list.length>0;
-  $('pos-meta').textContent = c.list.length+' / '+MAX_TIER+'티어'+(state.seeded?' · 예시 데이터':'');
+  $('pos-meta').textContent = '보유 '+c.list.length+' / '+MAX_TIER+'개'+(state.seeded?' · 예시 데이터':'');
   var af=applyFill();
   if(!modeTouched && (af||c.mode)) $('a-mode').value=af?af.mode:c.mode;
   syncTierOptions(af?af.tier:null);
@@ -699,11 +731,9 @@ function editAttr(p,f){
   return ' class="cell-in" data-edit="'+f+'" data-id="'+esc(p.id)+'"';
 }
 function cellTier(p){
-  var used={}, h='', t;
-  state.positions.forEach(function(q){ if(q.id!==p.id) used[q.tier]=true; });
+  var h='', t;
   for(t=1;t<=MAX_TIER;t++)
-    h+='<option value="'+t+'"'+(used[t]?' disabled':'')+(t===p.tier?' selected':'')+'>'+
-       t+'티어'+(used[t]?' · 보유 중':'')+'</option>';
+    h+='<option value="'+t+'"'+(t===p.tier?' selected':'')+'>'+t+'티어</option>';
   return '<select'+editAttr(p,'tier')+' aria-label="티어">'+h+'</select>';
 }
 function cellMode(p){
@@ -720,17 +750,15 @@ function cellDate(p){
   return '<input type="date"'+editAttr(p,'date')+' value="'+esc(p.date||'')+'" aria-label="체결일">';
 }
 
-/* 체결 기록의 티어 선택 — 보유 중인 티어는 고를 수 없고, 손대기 전에는
-   다음 매수 티어를 미리 잡아 둔다. */
+/* 체결 기록의 티어 선택 — 손대기 전에는 다음 매수 티어(보유 개수 + 1)를
+   미리 잡아 둔다. 같은 티어 번호가 이미 있어도 고를 수 있다(§4.1). */
 function syncTierOptions(auto){
-  /* 예시 장부는 첫 입력에 통째로 비워지므로 자리를 막지 않고 1티어부터 연다 */
-  var sel=$('a-tier'), held=state.seeded?{}:heldTiers(),
-      dflt=auto||(state.seeded?1:nextTier()),
+  /* 예시 장부는 첫 입력에 통째로 비워지므로 1티어부터 연다 */
+  var sel=$('a-tier'), dflt=auto||(state.seeded?1:nextTier()),
       want=tierTouched?Math.floor(+sel.value):dflt, h='', t;
-  if(!(want>=1&&want<=MAX_TIER)||held[want]){ want=dflt; tierTouched=false; }
+  if(!(want>=1&&want<=MAX_TIER)){ want=dflt; tierTouched=false; }
   for(t=1;t<=MAX_TIER;t++)
-    h+='<option value="'+t+'"'+(held[t]?' disabled':'')+(t===want?' selected':'')+'>'+
-       t+'티어'+(held[t]?' · 보유 중':'')+'</option>';
+    h+='<option value="'+t+'"'+(t===want?' selected':'')+'>'+t+'티어</option>';
   sel.innerHTML=h;
   sel.value=(want==null?'':String(want));
   sel.disabled=(want==null);
@@ -757,7 +785,7 @@ function renderWeights(c){
   $('weight-body').innerHTML=body;
 
   $('weight-meta').textContent = !c.mode ? '모드 미확정'
-    : (nt>MAX_TIER ? P[c.mode].ko+' 모드 · 7티어 만재'
+    : (nt>MAX_TIER ? P[c.mode].ko+' 모드 · 7개 보유 만재'
       : P[c.mode].ko+' 모드 · 다음 매수는 '+nt+'티어, 시드의 '+
         (P[c.mode].w[nt-1]*100).toFixed(0)+'%');
 }
@@ -797,7 +825,7 @@ function activate(tk){
   delete state.books[tk];
   state.ticker=tk; P=PARAMS[tk];
   state.prevClose=b.prevClose; state.seed=b.seed;
-  state.positions=b.positions; state.seeded=!!b.seeded;
+  state.positions=b.positions; state.closed=b.closed||[]; state.seeded=!!b.seeded;
   modeTouched=false; tierTouched=false; fillTouched=false;
   markTicker(); syncInputs();
   save(); render(); feedMeta();
@@ -841,8 +869,6 @@ function commitRow(id){
 
   tier=Math.floor(+v.tier); price=+v.price; qty=Math.floor(+v.qty);
   if(!(tier>=1&&tier<=MAX_TIER)){ toast('티어는 1~7 사이입니다'); return false; }
-  if(state.positions.some(function(q){ return q!==p && q.tier===tier; })){
-    toast(tier+'티어는 이미 보유 중입니다'); return false; }
   if(!P[v.mode]){ toast('진입 모드를 확인하세요'); return false; }
   if(!(price>0)){ toast('매수가는 0보다 커야 합니다'); return false; }
   if(!(qty>0)){ toast('수량은 1주 이상이어야 합니다'); return false; }
@@ -850,7 +876,7 @@ function commitRow(id){
 
   p.tier=tier; p.mode=v.mode; p.price=price; p.qty=qty; p.date=v.date;
   state.seeded=false;                        // 손을 댔으면 더는 예시가 아니다
-  state.positions.sort(function(a,b){ return a.tier-b.tier; });
+  state.positions.sort(byTier);
   tierTouched=false;
   return true;
 }
@@ -872,8 +898,10 @@ $('pos-body').addEventListener('click',function(e){
   if((b=t.closest('[data-del]'))){
     var id=b.getAttribute('data-del');
     if(editId===id) editId=null;
-    state.positions=state.positions.filter(function(p){ return p.id!==id; });
-    tierTouched=false;                         // 비워진 티어를 다음 입력 기본값으로
+    state.positions=state.positions.filter(function(p){
+      if(p.id===id) logClosed(p);              // 청산으로 지운 것이면 전일 매수 재현용으로 남긴다
+      return p.id!==id; });
+    tierTouched=false;                         // 줄어든 보유 개수 + 1 을 다음 입력 기본값으로
     save(); render();
   }
 });
@@ -893,12 +921,11 @@ $('btn-add').addEventListener('click',function(){
       d=$('a-date').value, m=$('a-mode').value, tier=Math.floor(+$('a-tier').value);
   if(!(price>0)||!(q>0)||!d){ toast('체결가, 수량, 체결일을 모두 입력하세요'); return; }
   if(state.seeded){ state.positions=[]; state.seeded=false; }   // 예시 장부는 첫 입력에 비운다
-  if(state.positions.length>=MAX_TIER){ toast('이미 7티어를 모두 보유 중입니다'); return; }
+  if(state.positions.length>=MAX_TIER){ toast('이미 7개를 모두 보유 중입니다'); return; }
   if(!(tier>=1&&tier<=MAX_TIER)){ toast('티어를 선택하세요'); return; }
-  if(heldTiers()[tier]){ toast(tier+'티어는 이미 보유 중입니다'); return; }
   state.positions.push({ id:newId(), tier:tier,
     mode:m, price:price, qty:q, date:d });
-  state.positions.sort(function(a,b){ return a.tier-b.tier; });
+  state.positions.sort(byTier);
   $('a-price').value=''; $('a-qty').value=''; tierTouched=false;
   modeTouched=false; fillTouched=false;
   save(); render(); toast(tier+'티어 포지션을 추가했습니다');
