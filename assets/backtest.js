@@ -73,6 +73,25 @@
     return modes;
   }
 
+  /* 액면분할 — 시계열은 분할 조정값이므로 cfg.splits([[날짜, 비율], ...])를 주면
+   * 그날 이후 분할을 되돌려 당시 실제 호가로 거래한다. 센트 단위 지정가와 정수
+   * 주식은 실제 가격에서만 의미가 있다(2011년 조정가 $0.40에서는 1센트가 2.5%).
+   * 분할일에는 보유 수량 × 비율, 매수가 ÷ 비율로 증권사처럼 장부를 바꾼다. */
+  function splitPlan(dates, splits) {
+    var fac = new Float64Array(dates.length), ratio = new Float64Array(dates.length);
+    var list = (splits || []).slice().sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
+    for (var g = dates.length - 1, f = 1, k = list.length - 1; g >= 0; g--) {
+      ratio[g] = 1;
+      while (k >= 0 && list[k][0] > dates[g]) {          // dates[g] 보다 뒤의 분할
+        if (g + 1 < dates.length && dates[g + 1] >= list[k][0]) ratio[g + 1] *= list[k][1];
+        f *= list[k][1]; k--;
+      }
+      fac[g] = f;
+    }
+    return { fac: fac, ratio: ratio };
+  }
+  function round2(x) { return Math.round(x * 100) / 100; }
+
   function backtest(hist, cfg) {
     cfg = cfg || {};
     var P = cfg.params || DEFAULT_PARAMS;
@@ -95,12 +114,24 @@
     var equity = new Float64Array(n);
     var dates = new Array(n), closes = new Float64Array(n), dmode = new Array(n);
     var modeDays = { bottom: 0, middle: 0, top: 0 };
+    var sp = cfg.splits && cfg.splits.length ? splitPlan(hist.dates, cfg.splits) : null;
+    var price = sp ? function (g) { return round2(hist.tqqq[g] * sp.fac[g]); }
+                   : function (g) { return hist.tqqq[g]; };
+    var splitAt = new Float64Array(n);
 
     for (var i = 0; i < n; i++) {
       var g = lo + i;                                 // 전역 인덱스
-      var px = hist.tqqq[g], mode = modes[g];
+      var px = price(g), mode = modes[g];
       dates[i] = hist.dates[g]; closes[i] = px; dmode[i] = mode;
       if (mode) modeDays[mode]++;
+
+      /* 분할일: 장 시작 전에 장부와 전일 종가를 새 단위로 바꾼다 */
+      var spl = sp && i > 0 ? sp.ratio[g] : 1, prevPx = g > 0 ? price(g - 1) / spl : 0;
+      splitAt[i] = spl;
+      if (spl !== 1) for (var s = 0; s < pos.length; s++) {
+        pos[s].qty *= spl; pos[s].price /= spl;
+        pos[s].tp = ceilCent(pos[s].price * (1 + pos[s].tpRate));
+      }
 
       /* 장 시작 전: 전일 종가로 주문 계획 */
       var plan = null;
@@ -108,7 +139,7 @@
         var tier = pos.length + 1, pp = P[mode];
         var buyRate = (mode === TOP && tier === 1) ? pp.buy1 : pp.buy;
         var tpRate  = (mode === TOP && tier === 1) ? pp.tp1  : pp.tp;
-        var limit = floorCent(hist.tqqq[g - 1] * (1 + buyRate));
+        var limit = floorCent(prevPx * (1 + buyRate));
         var ok = true, j;
 
         // §6.3 천장 MOC 예정일에는 신규 매수 금지
@@ -165,7 +196,7 @@
           var cost = qty * px * (1 + feeBuy);
           cash -= cost;
           pos.push({ tier: plan.tier, mode: plan.mode, qty: qty, price: px, cost: cost,
-                     tp: ceilCent(px * (1 + plan.tpRate)),
+                     tp: ceilCent(px * (1 + plan.tpRate)), tpRate: plan.tpRate,
                      mocI: i + plan.moc, entryI: i });
         }
       }
@@ -175,7 +206,7 @@
       equity[i] = cash + mv;
     }
 
-    return { dates: dates, equity: equity, closes: closes, modes: dmode,
+    return { dates: dates, equity: equity, closes: closes, splitAt: splitAt, modes: dmode,
              trades: trades, modeDays: modeDays, seed0: seed0 };
   }
 
@@ -199,21 +230,29 @@
              calmar: mdd < 0 ? cagr / Math.abs(mdd) : null };
   }
 
-  /* Buy & Hold 비교 — 같은 시드로 정수 주식 1회 매수 후 보유 */
+  /* Buy & Hold 비교 — 같은 시드로 정수 주식 1회 매수 후 보유 (분할 시 수량 증가) */
   function buyHold(r, feeBuy) {
     feeBuy = feeBuy == null ? FEE_BUY : feeBuy;
     var q = Math.floor(r.seed0 / (r.closes[0] * (1 + feeBuy)));
     var rest = r.seed0 - q * r.closes[0] * (1 + feeBuy);
     var out = new Float64Array(r.equity.length);
-    for (var i = 0; i < out.length; i++) out[i] = rest + q * r.closes[i];
+    for (var i = 0; i < out.length; i++) {
+      if (i > 0 && r.splitAt && r.splitAt[i] > 1) q *= r.splitAt[i];
+      out[i] = rest + q * r.closes[i];
+    }
     return out;
   }
 
+  /* 연도별 수익률 — 직전 연말 자산 대비(첫 해는 구간 첫날 기준). 월별 표의
+   * 연간 칸과 같은 값이 된다. 연중 MDD 도 직전 연말을 고점 후보로 넣는다. */
   function annual(r) {
-    var out = [], cur = null;
+    var out = [], cur = null, base = r.equity[0];
     for (var i = 0; i < r.dates.length; i++) {
       var y = r.dates[i].slice(0, 4);
-      if (!cur || cur.year !== y) { cur = { year: y, first: r.equity[i], last: r.equity[i], peak: r.equity[i], mdd: 0 }; out.push(cur); }
+      if (!cur || cur.year !== y) {
+        if (cur) base = cur.last;
+        cur = { year: y, first: base, last: r.equity[i], peak: base, mdd: 0 }; out.push(cur);
+      }
       cur.last = r.equity[i];
       if (r.equity[i] > cur.peak) cur.peak = r.equity[i];
       var d = r.equity[i] / cur.peak - 1;
@@ -257,7 +296,7 @@
   var api = { BOTTOM: BOTTOM, MIDDLE: MIDDLE, TOP: TOP,
               DEFAULT_PARAMS: DEFAULT_PARAMS, FEE_BUY: FEE_BUY, FEE_SELL: FEE_SELL,
               SEC_FEE: SEC_FEE, MAX_TIER: MAX_TIER,
-              floorCent: floorCent, ceilCent: ceilCent, centerPrice: centerPrice,
+              floorCent: floorCent, ceilCent: ceilCent, centerPrice: centerPrice, splitPlan: splitPlan,
               assignModes: assignModes, backtest: backtest, metrics: metrics,
               buyHold: buyHold, annual: annual, monthly: monthly, rolling: rolling };
 

@@ -7,7 +7,9 @@ let bad = 0;
 for (const c of cases) {
   const cfg = { start: c.start, end: c.end, seed: c.seed };
   if (c.params) cfg.params = c.params;
-  const m = B.metrics(B.backtest(hist, cfg));
+  if (c.splits) cfg.splits = c.splits;              // 실제 호가(분할 반영) 경로
+  const px = { dates: hist.dates, tqqq: hist[c.ticker || 'tqqq'], qqq: hist.qqq };
+  const m = B.metrics(B.backtest(px, cfg));
   const got = { cagr: m.cagr, mdd: m.mdd, final: m.final, trades: m.trades, winrate: m.winrate };
   const d = {
     cagr: Math.abs(got.cagr - c.expect.cagr),

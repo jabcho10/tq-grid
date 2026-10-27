@@ -24,6 +24,7 @@ ET = ZoneInfo("America/New_York")
 UA = {"User-Agent": "Mozilla/5.0 (compatible; tqqq-grid-order-desk/1.0)"}
 OUT = os.path.join(os.path.dirname(__file__), "..", "data", "prices.json")
 HIST = os.path.join(os.path.dirname(__file__), "..", "data", "history.json")
+SPLITS: dict = {}       # 야후가 알려 준 최근 액면분할 {종목(소문자): [(날짜, 비율), ...]}
 
 # NYSE 휴장일 (index.html 의 목록과 동일하게 유지할 것)
 HOLIDAYS = {
@@ -76,12 +77,12 @@ def get_retry(url: str, attempts: int = 4) -> bytes:
 
 
 def from_yahoo(symbol: str) -> dict:
-    """{date(ISO): close} — 실제 거래 종가(수정주가 아님)."""
+    """{date(ISO): close} — 배당 미조정·분할 조정 종가. 최근 분할은 SPLITS 에 남긴다."""
     errors = []
     payload = None
     for host in ("query1", "query2"):
         url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/{symbol}"
-               f"?interval=1d&range=3mo")
+               f"?interval=1d&range=3mo&events=split")
         try:
             payload = json.loads(get_retry(url))
             break
@@ -90,6 +91,13 @@ def from_yahoo(symbol: str) -> dict:
     if payload is None:
         raise RuntimeError(" / ".join(errors))
     res = payload["chart"]["result"][0]
+    found = []
+    for ev in ((res.get("events") or {}).get("splits") or {}).values():
+        num, den = ev.get("numerator"), ev.get("denominator")
+        if num and den:
+            day = dt.datetime.fromtimestamp(ev["date"], dt.timezone.utc).astimezone(ET).date()
+            found.append((day.isoformat(), num / den))
+    SPLITS[symbol.lower()] = sorted(found)
     stamps = res["timestamp"]
     closes = res["indicators"]["quote"][0]["close"]
     out = {}
@@ -208,16 +216,21 @@ def merge_history(series_by_key: dict) -> int:
         print(f"history.json: {', '.join(absent)} 시세가 없어 건너뜁니다.", file=sys.stderr)
         return 0
 
+    # 새 액면분할: 야후는 과거 종가를 새 단위로 다시 조정해 주지만 여기서는 뒤에만
+    # 덧붙이므로, 저장된 분할일 이전 값을 같은 비율로 나눠 한 단위로 맞춘다.
+    # 이력은 백테스트가 당시 실제 호가를 되돌리는 데 쓴다(assets/backtest.js).
+    rescaled = rescale_splits(hist, keys)
+
     last = hist["dates"][-1]
     known = set(hist["dates"])
     fresh = sorted(d for d in series_by_key["tqqq"]
                    if d > last and d not in known
                    and all(d in series_by_key[k] for k in keys))
-    if not fresh:
+    if not fresh and not rescaled:
         return 0
 
     expected = next_trading_day(dt.date.fromisoformat(last)).isoformat()
-    if fresh[0] != expected:
+    if fresh and fresh[0] != expected:
         print(f"경고: {last} 다음 거래일 {expected} 이 수집 범위 밖입니다 — "
               f"{fresh[0]} 부터 붙입니다. 백테스트 구간에 구멍이 생깁니다.",
               file=sys.stderr)
@@ -230,6 +243,28 @@ def merge_history(series_by_key: dict) -> int:
     with open(HIST, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(hist, fh, separators=(",", ":"))
     return len(fresh)
+
+
+def rescale_splits(hist: dict, keys: list) -> bool:
+    """SPLITS 중 history.json 에 아직 없는 분할을 반영한다. 바뀌었으면 True."""
+    known = hist.setdefault("splits", {})
+    changed = False
+    for key in keys:
+        have = {d for d, _ in known.get(key, [])}
+        for day, ratio in SPLITS.get(key, []):
+            if day in have or ratio == 1:
+                continue
+            col = hist[key]
+            for j, d in enumerate(hist["dates"]):
+                if d < day and col[j] is not None:
+                    col[j] = round(col[j] / ratio, 8)   # 되돌릴 때 실제 호가 센트가 살도록 정밀도 유지
+            ratio = int(ratio) if float(ratio).is_integer() else ratio
+            known.setdefault(key, []).append([day, ratio])
+            known[key].sort()
+            print(f"history.json: {key} {day} {ratio}:1 분할 반영 — 이전 종가를 나눴습니다.",
+                  file=sys.stderr)
+            changed = True
+    return changed
 
 
 def main() -> int:
