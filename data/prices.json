@@ -1,22 +1,22 @@
 {
-  "updated": "2026-11-25T04:49:31+00:00",
+  "updated": "2026-11-26T04:01:59+00:00",
   "source": {
     "tqqq": "yahoo",
     "qqq": "yahoo",
     "soxl": "yahoo"
   },
   "tqqq": {
-    "date": "2026-11-24",
-    "close": 46.19
+    "date": "2026-11-25",
+    "close": 45.28
   },
   "qqq_week": {
     "date": "2026-11-20",
     "close": 608.45
   },
-  "order_date": "2026-11-25",
+  "order_date": "2026-11-27",
   "partial": false,
   "soxl": {
-    "date": "2026-11-24",
-    "close": 32.6
+    "date": "2026-11-25",
+    "close": 32.02
   }
 }
